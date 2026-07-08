@@ -115,6 +115,7 @@ def build_report(
     report_date: str,
     generated_at: str,
     focus_items: list | None = None,
+    missing_teams: list | None = None,
 ) -> DailyReport:
     teams = [evaluate_team(s, definitions) for s in snapshots]
 
@@ -143,4 +144,5 @@ def build_report(
         regions=regions,
         focus_items=focus_items or [],
         metric_definitions=definitions,
+        missing_teams=missing_teams or [],
     )

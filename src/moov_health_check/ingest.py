@@ -24,6 +24,11 @@ def _snapshot_from_dict(raw: dict) -> TeamSnapshot:
         metrics={k: _num(v) for k, v in raw.get("metrics", {}).items()},
         notes=raw.get("notes", ""),
         prev_metrics={k: _num(v) for k, v in raw.get("prev_metrics", {}).items()},
+        accomplished=raw.get("accomplished", ""),
+        blockers=raw.get("blockers", ""),
+        plan=raw.get("plan", ""),
+        submitted_by=raw.get("submitted_by", ""),
+        submitted_at=raw.get("submitted_at", ""),
     )
 
 
@@ -54,6 +59,44 @@ def _load_json(path: Path) -> tuple[list, str | None]:
         report_date = data.get("report_date")
     snapshots = [_snapshot_from_dict(t) for t in teams_raw]
     return snapshots, report_date
+
+
+def load_roster(roster_path: str) -> dict:
+    """Load the team roster: ``{team_id: {team_id, team_name, region, ...}}``.
+
+    The roster is the source of truth for which teams are *expected* to report
+    each day, so the manager can see who hasn't filed yet.
+    """
+    data = json.loads(Path(roster_path).read_text(encoding="utf-8"))
+    teams = data.get("teams", data)
+    return {str(t["team_id"]): t for t in teams}
+
+
+def load_reports_dir(
+    reports_dir: str, report_date: str, roster: dict | None = None
+) -> tuple[list, list]:
+    """Collect all team submissions filed for ``report_date``.
+
+    Reads every ``<reports_dir>/<report_date>/*.json`` submission (as written by
+    ``moov-health-check submit``) and returns ``(snapshots, missing_teams)``
+    where ``missing_teams`` lists roster entries that have not reported yet.
+    """
+    day_dir = Path(reports_dir) / report_date
+    snapshots = []
+    seen = set()
+    if day_dir.is_dir():
+        for path in sorted(day_dir.glob("*.json")):
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            snap = _snapshot_from_dict(raw)
+            snapshots.append(snap)
+            seen.add(snap.team_id)
+
+    missing = []
+    if roster:
+        for team_id, info in roster.items():
+            if team_id not in seen:
+                missing.append(info)
+    return snapshots, missing
 
 
 # Reserved (non-metric) columns in a CSV upload.

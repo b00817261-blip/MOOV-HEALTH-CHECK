@@ -135,7 +135,7 @@ class MetricReading:
 
 @dataclass
 class TeamSnapshot:
-    """Raw daily input for one team."""
+    """Raw daily input for one team — metrics plus the team's written report."""
 
     team_id: str
     team_name: str
@@ -145,6 +145,16 @@ class TeamSnapshot:
     metrics: dict = field(default_factory=dict)
     notes: str = ""
     prev_metrics: dict = field(default_factory=dict)
+    # Qualitative daily report filed by the team lead via `submit`:
+    accomplished: str = ""   # what the team got done since the last report
+    blockers: str = ""       # what is blocking them / where they need help
+    plan: str = ""           # what the team intends to do today
+    submitted_by: str = ""
+    submitted_at: str = ""
+
+    @property
+    def has_report_text(self) -> bool:
+        return bool(self.accomplished or self.blockers or self.plan)
 
 
 @dataclass
@@ -210,6 +220,9 @@ class DailyReport:
     regions: list = field(default_factory=list)          # list[RegionHealth]
     focus_items: list = field(default_factory=list)      # list[FocusItem]
     metric_definitions: dict = field(default_factory=dict)
+    # Roster teams that have not filed a report yet today (list of dicts with
+    # team_id / team_name / region / timezone / manager).
+    missing_teams: list = field(default_factory=list)
 
     @property
     def teams(self) -> list:

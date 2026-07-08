@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "moov-health-check"
-version = "1.0.0"
+version = "1.1.0"
 description = "Daily operations health-check & work-focus report for operations managers worldwide."
 readme = "README.md"
 requires-python = ">=3.9"

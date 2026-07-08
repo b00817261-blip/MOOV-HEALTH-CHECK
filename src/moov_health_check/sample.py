@@ -54,6 +54,25 @@ _PROFILE_PLAN = [
     "watch", "healthy", "at_risk",
 ]
 
+# Plausible shift-start narrative per profile, used for the demo team reports.
+_REPORT_TEXTS = {
+    "healthy": {
+        "accomplished": "Cleared the full queue yesterday; SLA held above target all shift.",
+        "blockers": "",
+        "plan": "Business as usual — keep dispatch cadence and coach two new starters.",
+    },
+    "watch": {
+        "accomplished": "Worked through most of the carried-over backlog; dispatch improving.",
+        "blockers": "Short two drivers on the afternoon shift; awaiting parts for one vehicle.",
+        "plan": "Prioritise oldest backlog jobs and rebalance the afternoon rota.",
+    },
+    "at_risk": {
+        "accomplished": "Contained yesterday's P1 to one zone; comms sent to affected customers.",
+        "blockers": "P1 root cause unresolved — need engineering support; staffing gap of 3.",
+        "plan": "All hands on P1 resolution and SLA recovery; defer non-urgent maintenance.",
+    },
+}
+
 
 def _draw(rng: random.Random, lo: float, hi: float, integer: bool) -> float:
     if integer:
@@ -79,6 +98,7 @@ def generate_snapshots(seed: int = 20260708) -> list:
             drift = rng.uniform(-0.04, 0.04)
             prev_val = metrics[key] * (1 + drift)
             prev[key] = round(prev_val) if integer else round(prev_val, 1)
+        texts = _REPORT_TEXTS[profile_name]
         teams.append(
             {
                 "team_id": team_id,
@@ -88,9 +108,24 @@ def generate_snapshots(seed: int = 20260708) -> list:
                 "manager": mgr,
                 "metrics": metrics,
                 "prev_metrics": prev,
+                "accomplished": texts["accomplished"],
+                "blockers": texts["blockers"],
+                "plan": texts["plan"],
+                "submitted_by": mgr,
             }
         )
     return teams
+
+
+def roster() -> dict:
+    """The demo roster, in ``config/teams.json`` shape."""
+    return {
+        "teams": [
+            {"team_id": tid, "team_name": name, "region": region,
+             "timezone": tz, "manager": mgr}
+            for tid, name, region, tz, mgr in _TEAMS
+        ]
+    }
 
 
 def generate_dataset(report_date: str, seed: int = 20260708) -> dict:

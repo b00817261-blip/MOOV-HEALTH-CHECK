@@ -131,6 +131,32 @@ def _render_terminal(report: DailyReport, color: bool) -> str:
             idot = _c("●", item.status, color)
             out.append(f"  {i:>2}. {idot} {bold}{item.headline}{reset}")
             out.append(f"       {dim}{item.detail}{reset}")
+
+    # What each team reported up
+    reported = [t for t in report.teams if t.snapshot.has_report_text]
+    if reported or report.missing_teams:
+        out.append(line)
+        out.append(f"{bold}  📋 TEAM REPORTS{reset}")
+        out.append(line)
+        for team in reported:
+            snap = team.snapshot
+            tdot = _c("●", team.status, color)
+            who = f" — {snap.submitted_by}" if snap.submitted_by else ""
+            when = f" · {snap.submitted_at}" if snap.submitted_at else ""
+            out.append(f"  {tdot} {bold}{team.team_name}{reset} ({team.region}){dim}{who}{when}{reset}")
+            if snap.accomplished:
+                out.append(f"      Done:     {snap.accomplished}")
+            if snap.blockers:
+                out.append(f"      {_c('Blockers: ' + snap.blockers, Status.AMBER, color)}")
+            if snap.plan:
+                out.append(f"      Today:    {snap.plan}")
+            out.append("")
+        if report.missing_teams:
+            names = ", ".join(
+                f"{t.get('team_name', t.get('team_id', '?'))} ({t.get('timezone', '?')})"
+                for t in report.missing_teams
+            )
+            out.append(f"  {_c('⚠ Awaiting reports:', Status.AMBER, color)} {names}")
     out.append(line)
     return "\n".join(out)
 
@@ -203,6 +229,29 @@ def _render_markdown(report: DailyReport) -> str:
             out.append(f"{i}. {_EMOJI[item.status]} **{item.headline}**  ")
             out.append(f"   _{item.detail}_")
     out.append("")
+
+    reported = [t for t in report.teams if t.snapshot.has_report_text]
+    if reported or report.missing_teams:
+        out.append("## 📋 Team reports")
+        out.append("")
+        for team in reported:
+            snap = team.snapshot
+            who = f" — _{snap.submitted_by}, {snap.submitted_at}_" if snap.submitted_by else ""
+            out.append(f"### {_EMOJI[team.status]} {team.team_name} ({team.region}){who}")
+            if snap.accomplished:
+                out.append(f"- **Done:** {snap.accomplished}")
+            if snap.blockers:
+                out.append(f"- **⚠️ Blockers:** {snap.blockers}")
+            if snap.plan:
+                out.append(f"- **Today:** {snap.plan}")
+            out.append("")
+        if report.missing_teams:
+            names = ", ".join(
+                f"{t.get('team_name', t.get('team_id', '?'))} ({t.get('timezone', '?')})"
+                for t in report.missing_teams
+            )
+            out.append(f"> ⚠️ **Awaiting reports:** {names}")
+            out.append("")
     return "\n".join(out)
 
 
@@ -272,6 +321,46 @@ def _render_html(report: DailyReport) -> str:
         f'<span class="theme">{esc(label)} · {cnt} team(s)</span>' for label, cnt, _ in themes
     )
 
+    # Team reports section
+    report_cards = []
+    for team in report.teams:
+        snap = team.snapshot
+        if not snap.has_report_text:
+            continue
+        meta = []
+        if snap.submitted_by:
+            meta.append(esc(snap.submitted_by))
+        if snap.submitted_at:
+            meta.append(esc(snap.submitted_at))
+        meta_html = f'<span class="muted"> — {" · ".join(meta)}</span>' if meta else ""
+        body = []
+        if snap.accomplished:
+            body.append(f'<div class="tr-line"><b>Done:</b> {esc(snap.accomplished)}</div>')
+        if snap.blockers:
+            body.append(
+                f'<div class="tr-line tr-blocker"><b>⚠ Blockers:</b> {esc(snap.blockers)}</div>'
+            )
+        if snap.plan:
+            body.append(f'<div class="tr-line"><b>Today:</b> {esc(snap.plan)}</div>')
+        report_cards.append(
+            f'<div class="team-report" style="border-left-color:{_HTML_COLORS[team.status]}">'
+            f'<div class="tr-head">{esc(team.team_name)} '
+            f'<span class="muted">({esc(team.region)})</span>{meta_html}</div>'
+            f'{"".join(body)}</div>'
+        )
+    awaiting_html = ""
+    if report.missing_teams:
+        names = ", ".join(
+            esc(f'{t.get("team_name", t.get("team_id", "?"))} ({t.get("timezone", "?")})')
+            for t in report.missing_teams
+        )
+        awaiting_html = f'<div class="awaiting">⚠ Awaiting reports: {names}</div>'
+    team_reports_section = ""
+    if report_cards or awaiting_html:
+        team_reports_section = (
+            "<h2>📋 Team reports</h2>" + "".join(report_cards) + awaiting_html
+        )
+
     overall_color = _HTML_COLORS[report.overall_status]
     return f"""<!DOCTYPE html>
 <html lang="en"><head>
@@ -316,10 +405,20 @@ li.focus-green {{ border-left-color:{_HTML_COLORS[Status.GREEN]}; }}
 .num {{ font-weight:700; color:#6b7078; min-width:20px; }}
 .focus-head {{ font-weight:600; }}
 .focus-detail {{ color:#9aa0a8; font-size:13px; margin-top:2px; }}
+.team-report {{ background:#171a21; border:1px solid #262a31; border-left:4px solid #8a8f98;
+  border-radius:10px; padding:12px 14px; margin-bottom:8px; }}
+.tr-head {{ font-weight:600; margin-bottom:4px; }}
+.tr-line {{ font-size:13px; color:#c7ccd3; margin-top:3px; }}
+.tr-blocker {{ color:{_HTML_COLORS[Status.AMBER]}; }}
+.awaiting {{ margin-top:10px; padding:10px 14px; border-radius:10px; font-size:13px;
+  background:rgba(217,149,19,.12); border:1px solid {_HTML_COLORS[Status.AMBER]};
+  color:{_HTML_COLORS[Status.AMBER]}; }}
 footer {{ margin-top:36px; color:#6b7078; font-size:12px; }}
 @media (prefers-color-scheme: light) {{
   body {{ background:#f6f7f9; color:#1a1d22; }}
-  .hero, li.focus {{ background:#fff; border-color:#e3e6ea; }}
+  .hero, li.focus, .team-report {{ background:#fff; border-color:#e3e6ea; }}
+  .team-report {{ border-left-width:4px; }}
+  .tr-line {{ color:#3a3f47; }}
   header {{ border-color:#e3e6ea; }}
   th,td {{ border-color:#eceef1; }}
   .region-row td {{ background:#f0f2f5; }}
@@ -359,6 +458,8 @@ footer {{ margin-top:36px; color:#6b7078; font-size:12px; }}
 {"".join(focus_html)}
 </ol>
 
+{team_reports_section}
+
 <footer>MOOV Health Check · zero-dependency daily operations report</footer>
 </div></body></html>"""
 
@@ -389,6 +490,13 @@ def _render_json(report: DailyReport) -> str:
                         "manager": t.snapshot.manager,
                         "score": t.score,
                         "status": t.status.value,
+                        "report": {
+                            "accomplished": t.snapshot.accomplished,
+                            "blockers": t.snapshot.blockers,
+                            "plan": t.snapshot.plan,
+                            "submitted_by": t.snapshot.submitted_by,
+                            "submitted_at": t.snapshot.submitted_at,
+                        },
                         "metrics": [
                             {
                                 "key": reading.key,
@@ -424,5 +532,6 @@ def _render_json(report: DailyReport) -> str:
             {"metric": label, "teams_affected": cnt, "total_priority": total}
             for label, cnt, total in fleet_themes(report.focus_items, top_n=5)
         ],
+        "awaiting_reports": report.missing_teams,
     }
     return json.dumps(payload, indent=2)

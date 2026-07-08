@@ -1,0 +1,37 @@
+{
+  "team_id": "amer-nyc",
+  "team_name": "New York Hub",
+  "region": "Americas",
+  "timezone": "America/New_York",
+  "manager": "Diego Ramirez",
+  "metrics": {
+    "sla_attainment": 92.2,
+    "on_time_dispatch": 95.9,
+    "open_p1_incidents": 1.0,
+    "backlog_jobs": 52.0,
+    "fleet_availability": 92.7,
+    "staffing_level": 93.9,
+    "csat": 87.4,
+    "error_rate": 1.6,
+    "safety_events": 0.0,
+    "cost_per_job": 13.1
+  },
+  "prev_metrics": {
+    "sla_attainment": 91.0,
+    "on_time_dispatch": 96.7,
+    "open_p1_incidents": 1,
+    "backlog_jobs": 54,
+    "fleet_availability": 91.1,
+    "staffing_level": 97.2,
+    "csat": 84.9,
+    "error_rate": 1.6,
+    "safety_events": 0,
+    "cost_per_job": 13.0
+  },
+  "accomplished": "Worked through most of the carried-over backlog; dispatch improving.",
+  "blockers": "Short two drivers on the afternoon shift; awaiting parts for one vehicle.",
+  "plan": "Prioritise oldest backlog jobs and rebalance the afternoon rota.",
+  "submitted_by": "Diego Ramirez",
+  "report_date": "2026-07-08",
+  "submitted_at": "2026-07-08 05:55 UTC"
+}

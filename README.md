@@ -1,68 +1,135 @@
 # 🚦 MOOV Health Check
 
-A **daily operations health-check & work-focus report** for operations managers
-anywhere in the world. Feed it each team's KPI readings for the day and it
-produces:
+A **daily operations reporting program** connecting a global operations manager
+with his teams around the world. It closes the loop in both directions:
 
-1. **A health check** — Red / Amber / Green status at **team**, **region**, and
-   **fleet** level, with a 0–100 score.
-2. **A work-focus list** — a prioritized, plain-English set of actions telling
-   each team what to tackle **first** today, plus the fleet-wide themes a global
-   ops lead should watch.
+- **Teams report up** ⬆️ — each team lead files a short daily report at the
+  start of their shift: their KPI numbers, what they got done, what's blocking
+  them, and their plan for the day.
+- **The manager directs down** ⬇️ — the manager runs one command and gets a
+  consolidated **health check** (Red/Amber/Green at team, region, and fleet
+  level), every team's written report, who *hasn't* reported yet, and a
+  prioritized **work-focus list** to direct each team's day.
 
-It is **zero-dependency** (Python standard library only), so it runs on a bare
-Python install — laptop, server, container, or a morning cron job — in every
-timezone.
+Zero dependencies (Python standard library only) — runs on a bare Python
+install in any timezone: laptop, server, container, or cron job.
 
 ---
 
-## Quick start
+## The daily loop
+
+```
+   06:00 Tokyo          07:00 London           08:00 New York
+┌───────────────┐    ┌───────────────┐     ┌───────────────┐
+│  Tokyo lead   │    │  London lead  │     │   NYC lead    │
+│    submit     │    │    submit     │ ... │    submit     │
+└───────┬───────┘    └───────┬───────┘     └───────┬───────┘
+        │                    │                     │
+        ▼                    ▼                     ▼
+              shared reports/ directory (one file per team per day)
+                             │
+                             ▼
+                ┌─────────────────────────┐
+                │   Operations manager    │
+                │  moov-health-check      │
+                │        report           │
+                └─────────────────────────┘
+                             │
+        health check · team reports · who's missing · work focus
+```
+
+The `reports/` directory is the hand-off point — put it on a shared drive, a
+synced folder (Dropbox/Drive), or a git repo, and the loop works across every
+timezone with no server to run.
+
+---
+
+## 1. Team side — reporting your work up
+
+At the start of the shift, each team lead runs:
 
 ```bash
-# No data needed — run the built-in global demo
+moov-health-check submit --team emea-lon
+```
+
+Run from a terminal it asks for each KPI (Enter to skip) and three questions —
+**what got done, blockers, today's plan** — then files the report:
+
+```
+Daily report — London Hub
+Enter today's numbers (press Enter to skip a metric).
+
+  SLA Attainment (%): 96.4
+  On-Time Dispatch (%): 97.8
+  Open P1 Incidents: 0
+  Job Backlog (jobs): 22
+  ...
+
+A few words for your manager (press Enter to skip).
+
+  What did the team get done since the last report?
+  > Cleared the weekend backlog, two new drivers onboarded
+  Any blockers or help needed?
+  > Two vans in service until Thursday
+  What is the plan for today?
+  > Focus SLA recovery in zone 2
+
+✓ Report filed for London Hub — 8 metrics · saved to reports/2026-07-08/emea-lon.json
+```
+
+Or non-interactively (for scripts / piping from your own systems):
+
+```bash
+moov-health-check submit --team emea-lon \
+  --metric sla_attainment=96.4 --metric backlog_jobs=22 \
+  --accomplished "Cleared the weekend backlog" \
+  --blockers "Two vans in service until Thursday" \
+  --plan "Focus SLA recovery in zone 2"
+```
+
+Yesterday's submission is picked up automatically so the manager's report shows
+day-over-day trends (▲/▼).
+
+## 2. Manager side — the daily health check
+
+```bash
+# Terminal summary for the morning stand-up
+moov-health-check report --reports-dir reports
+
+# Self-contained HTML dashboard to email or host
+moov-health-check report --reports-dir reports --format html -o today.html
+
+# Markdown for Slack
+moov-health-check report --reports-dir reports --region APAC --format markdown
+```
+
+The report shows:
+
+1. **Fleet status** — R/A/G + 0–100 score, rolled up team → region → fleet.
+2. **🎯 Work focus for today** — every off-target metric turned into a
+   concrete, prioritized instruction (Reds always outrank Ambers), plus
+   fleet-wide themes.
+3. **📋 Team reports** — each team's *done / blockers / plan* in their own
+   words, and an **"Awaiting reports"** line naming teams that haven't filed
+   yet — accountability across timezones at a glance.
+
+Try it instantly with the bundled sample day (7 of 9 hubs reported):
+
+```bash
+python -m moov_health_check report --reports-dir data/sample_reports --date 2026-07-08
+```
+
+Or with zero files at all:
+
+```bash
 python -m moov_health_check --demo
-
-# A polished HTML dashboard you can email or host
-python -m moov_health_check --demo --format html --output report.html
-
-# Just one region, as Markdown for a Slack stand-up
-python -m moov_health_check --demo --region APAC --format markdown
-
-# Your own data
-python -m moov_health_check --input data/today.json --format html -o report.html
-```
-
-Sample terminal output:
-
-```
-════════════════════════════════════════════════════════════════
-  MOOV OPERATIONS · DAILY HEALTH CHECK
-  2026-07-08   generated 2026-07-08 06:00 UTC
-════════════════════════════════════════════════════════════════
-  ● FLEET STATUS: WATCH   score 78.2/100
-    9 teams · 4 healthy · 3 watch · 2 at-risk · 0 no-data
-
-  ● APAC  WATCH  score 93
-      ● Tokyo Hub       Asia/Tokyo   score 77.5  SLA Attainment 92.1%  Open P1 Incidents 1
-      ...
-
-  🎯 WORK FOCUS FOR TODAY
-    Fleet-wide themes:
-      • Job Backlog affecting 5 team(s)
-      • SLA Attainment affecting 4 team(s)
-
-   1. ● Recover sla attainment — Dubai Hub
-        Now 85.3% vs target 97% · (11.7% below target) · Critical — escalate first thing.
-   2. ● Resolve open p1 incidents — São Paulo Hub
-        Now 3 vs target 0 · Critical — escalate first thing.
 ```
 
 ---
 
 ## Installation
 
-No installation is required to run it from the repo (`python -m moov_health_check`).
-To install it as a command:
+No install needed from the repo (`python -m moov_health_check …`). As a command:
 
 ```bash
 pip install -e .
@@ -71,13 +138,24 @@ moov-health-check --demo
 
 ---
 
-## How it works
+## Configuration
 
-### 1. KPI catalogue (thresholds)
+### Team roster — `config/teams.json`
 
-Each KPI is defined once with a target and Amber/Red thresholds. The shipped
-catalogue (`config/thresholds.json`) covers service, reliability, throughput,
-capacity, customer, quality, safety, and cost. Example:
+The source of truth for which teams are *expected* to report every day:
+
+```json
+{
+  "teams": [
+    { "team_id": "emea-lon", "team_name": "London Hub", "region": "EMEA",
+      "timezone": "Europe/London", "manager": "Aoife Byrne" }
+  ]
+}
+```
+
+### KPI catalogue — `config/thresholds.json`
+
+Each KPI has a target, Amber/Red thresholds, a weight, and a category:
 
 ```json
 "sla_attainment": {
@@ -88,90 +166,59 @@ capacity, customer, quality, safety, and cost. Example:
 }
 ```
 
-* `direction` — `higher_is_better` (SLA, CSAT…) or `lower_is_better` (incidents,
-  backlog, cost…).
-* `warn` / `critical` — the Green→Amber and Amber→Red boundaries.
-* `weight` — how much the KPI counts toward the team score.
+* `direction` — `higher_is_better` (SLA, CSAT…) or `lower_is_better`
+  (incidents, backlog, cost…).
 * `category` — `safety` and `reliability` are **critical categories**: a single
-  Red there drags the whole team to Red, so it can never be masked by an
+  Red there drags the whole team to Red so it can never be masked by an
   otherwise-green average.
 
-Override any of it with your own file: `--config my_thresholds.json`.
+Override with `--config my_thresholds.json` on either command.
 
-### 2. Daily input
+### Other input formats
 
-One record per team with that morning's readings. JSON:
-
-```json
-{
-  "report_date": "2026-07-08",
-  "teams": [
-    {
-      "team_id": "emea-lon", "team_name": "London Hub",
-      "region": "EMEA", "timezone": "Europe/London", "manager": "Aoife Byrne",
-      "metrics": {
-        "sla_attainment": 96.4, "open_p1_incidents": 0,
-        "backlog_jobs": 22, "csat": 91
-      },
-      "prev_metrics": { "sla_attainment": 95.9 }
-    }
-  ]
-}
-```
-
-`prev_metrics` is optional; when present the report shows day-over-day trends
-(▲/▼). Missing metrics are reported as *no data* and never penalize the score.
-
-You can also upload a **wide CSV** — one row per team, one column per metric
-(see `data/sample_metrics.csv`).
-
-### 3. Health check & work focus
-
-* **Team score** = weighted average of its readings (Green 100 / Amber 55 /
-  Red 15). Status is escalated by rule for critical categories.
-* **Region / fleet** roll up staff-weighted, and escalate when a third or more
-  of teams are Red.
-* **Focus items** are generated for every off-target metric, ranked by
-  `status urgency × metric weight`, so Reds always sort above Ambers. Each item
-  is a concrete instruction with the current value, the gap to target, and the
-  trend.
+Besides the submissions directory, `report` also accepts a single JSON file
+(`--input data/sample_metrics.json`) or a wide CSV
+(`--input data/sample_metrics.csv`) — handy when the numbers come from an
+export instead of team submissions.
 
 ---
 
 ## CLI reference
 
+### `moov-health-check submit`
+
 | Flag | Description |
 |------|-------------|
-| `--input, -i PATH` | Team metrics file (`.json` or `.csv`). |
-| `--demo` | Use built-in synthetic global data (mutually exclusive with `--input`). |
-| `--config, -c PATH` | Custom thresholds JSON. |
+| `--team, -t ID` | Your team id from the roster (required). |
+| `--reports-dir, -R DIR` | Shared reports directory (default `./reports`). |
+| `--roster PATH` | Roster JSON (default `config/teams.json`). |
+| `--metric, -m K=V` | A KPI reading, repeatable. Omit to be prompted. |
+| `--accomplished / --blockers / --plan` | Your words for the manager. |
+| `--by NAME` | Who is submitting (default: manager from roster). |
+| `--date, -d` | Report date (default today, UTC). |
+| `--team-name / --team-region / --team-timezone` | Identify a team not in the roster. |
+
+### `moov-health-check report`
+
+| Flag | Description |
+|------|-------------|
+| `--reports-dir, -R DIR` | Collect team submissions from this directory. |
+| `--input, -i PATH` | …or a single metrics file (JSON/CSV). |
+| `--demo` | …or built-in synthetic global data. |
+| `--roster PATH` | Roster for the "awaiting reports" check. |
 | `--format, -f` | `terminal` (default), `markdown`, `html`, `json`. |
 | `--output, -o PATH` | Write to a file instead of stdout. |
-| `--region, -r NAME` | Only include teams in this region. |
-| `--date, -d YYYY-MM-DD` | Report date label (default: today, UTC). |
-| `--focus-per-team N` | Cap focus items contributed per team. |
+| `--region, -r NAME` | Only this region. |
+| `--date, -d` | Report date (default today, UTC). |
+| `--focus-per-team N` | Cap focus items per team. |
 | `--no-color` | Disable ANSI colour. |
-| `--version, -V` | Print version. |
 
-**Exit codes** reflect fleet health, so you can gate an alert from a cron job:
-`0` green · `1` amber · `3` red · `2` on input error.
-
-```bash
-# Email the report only when the fleet is amber or red
-python -m moov_health_check -i data/today.json -f html -o /tmp/r.html || \
-  mail -s "MOOV ops needs attention" ops-oncall@moov.example < /tmp/r.html
-```
-
----
-
-## Automating the daily report
-
-Run it every morning at 06:00 local via cron:
+**Exit codes** reflect fleet health so a cron job can gate an alert:
+`0` green · `1` amber · `3` red · `2` input error.
 
 ```cron
-0 6 * * *  cd /opt/moov-health-check && \
-  python -m moov_health_check -i /data/metrics/$(date +\%F).json \
-    -f html -o /var/www/ops/today.html
+# Manager's inbox at 06:00 every weekday
+0 6 * * 1-5  cd /srv/moov && moov-health-check report -R reports -f html -o /var/www/ops/today.html
 ```
 
 ---
@@ -180,18 +227,21 @@ Run it every morning at 06:00 local via cron:
 
 ```
 src/moov_health_check/
-  models.py    # dataclasses: Status, MetricDefinition, TeamHealth, DailyReport …
+  models.py    # dataclasses: Status, MetricDefinition, TeamSnapshot, DailyReport …
   config.py    # KPI catalogue + threshold loading
-  ingest.py    # read JSON / CSV daily input
+  submit.py    # team-side daily submission (interactive + scripted)
+  ingest.py    # read submissions dir / JSON / CSV; roster loading
   health.py    # RAG evaluation and team/region/fleet rollups
   focus.py     # work-focus recommendation engine + fleet themes
   report.py    # terminal / markdown / html / json renderers
   sample.py    # synthetic global data for --demo
-  cli.py       # argparse entry point
-config/thresholds.json      # the default KPI catalogue
-data/sample_metrics.json    # example daily input (JSON)
-data/sample_metrics.csv     # example daily input (CSV)
-tests/                      # pytest suite
+  cli.py       # `submit` and `report` subcommands
+config/teams.json            # the team roster (who must report daily)
+config/thresholds.json       # the default KPI catalogue
+data/sample_reports/         # a sample day of team submissions
+data/sample_metrics.json     # example single-file input (JSON)
+data/sample_metrics.csv      # example single-file input (CSV)
+tests/                       # pytest suite
 ```
 
 ## Development
