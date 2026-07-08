@@ -29,7 +29,14 @@ nothing else to install.
 |------|-------------|--------------|
 | `/` | The manager | The daily dashboard: fleet health, work focus, every team's report, and who hasn't reported yet. Browse any date. |
 | `/submit` | Team leads | A two-minute form: pick your team, enter today's numbers, answer three questions (done / blockers / plan), hit **Send report to my manager**. |
+| `/tasks` | Everyone | The **employee task list**: the manager adds a task with an assignee and a deadline; the team updates the status (To-do / In progress / Waiting) and ticks it **✓ Done**. Status chips, overdue flags, and Trello-style "per status" / "per due date" summary bars. |
+| `/calendar` | Everyone | A month view of task deadlines and filed reports — click any day to open its daily sheet. |
+| `/sheet` | The manager | A printable **Daily Status Report** sheet for any date: KPI tiles (fleet score, teams reported, task completion, blockers), completed activities, in-progress tasks, issues & escalations, and today's objectives. Print it to PDF straight from the browser. |
+| `/history` | The manager | **Saved reports**: every day the teams have reported, plus a consolidated table over any date range. |
 | `/report.json` | Other systems | The same data, machine-readable. |
+
+Tasks are stored in `<reports-dir>/tasks.json`, right next to the daily report
+folders — share the directory and you share the whole site's data.
 
 To make it reachable by teams around the world, run it on any small server or
 VM the teams can reach (an office server, a $5 cloud VM behind your company
@@ -279,7 +286,9 @@ src/moov_health_check/
   health.py    # RAG evaluation and team/region/fleet rollups
   focus.py     # work-focus recommendation engine + fleet themes
   report.py    # terminal / markdown / html / json renderers
-  web.py       # the website: dashboard + submission form (stdlib http.server)
+  tasks.py     # the shared task list (assign, update status, tick done)
+  pages.py     # HTML pages: tasks, calendar, daily sheet, saved reports
+  web.py       # the website: routing + dashboard + submission form (stdlib http.server)
   sample.py    # synthetic global data for --demo
   cli.py       # `serve`, `submit`, and `report` subcommands
 config/teams.json            # the team roster (who must report daily)

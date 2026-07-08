@@ -10,6 +10,10 @@ Pages
 -----
 * ``/``             – the manager's daily dashboard (pick any date)
 * ``/submit``       – the form each team lead fills in at the start of shift
+* ``/tasks``        – the shared task list: the manager assigns, teams tick off
+* ``/calendar``     – month view of task deadlines & filed reports
+* ``/sheet``        – printable "Daily Status Report" sheet for any date
+* ``/history``      – saved reports: browse back & consolidate over a range
 * ``/report.json``  – machine-readable version of the dashboard
 
 Submissions are stored exactly like the CLI stores them (one JSON per team per
@@ -24,7 +28,9 @@ import json
 import re
 from datetime import date as date_cls, datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote_plus, urlparse
+
+from pathlib import Path
 
 from .config import load_metric_definitions
 from .focus import build_focus_items
@@ -32,9 +38,12 @@ from .health import build_report
 from .ingest import load_reports_dir, load_roster
 from .models import Direction
 from .report import render
+from .tasks import TaskStore
+from . import pages
 from . import submit as submit_mod
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_MONTH_RE = re.compile(r"^\d{4}-\d{2}$")
 
 
 class AppState:
@@ -44,6 +53,9 @@ class AppState:
         self.reports_dir = reports_dir
         self.roster_path = roster_path
         self.definitions = load_metric_definitions(config_path)
+        # The task list lives next to the day folders in the reports dir, so
+        # sharing that directory shares the whole website's data.
+        self.tasks = TaskStore(str(Path(reports_dir) / "tasks.json"))
 
     def roster(self) -> dict:
         # Re-read per request so teams can be added without a restart.
@@ -85,24 +97,99 @@ def dashboard_page(state: AppState, day: str, submitted_team: str = "") -> str:
         )
     nav = f"""{toast}<nav class="nav">
   <a class="primary" href="/submit?date={day}">📝 File my team's report</a>
+  <a href="/sheet?date={day}">📄 Daily sheet</a>
+  <a href="/tasks">✅ Tasks</a>
+  <a href="/calendar?month={day[:7]}">🗓 Calendar</a>
+  <a href="/history">🗂 Saved reports</a>
+  <span class="spacer"></span>
   <a href="/?date={_shift_date(day, -1)}">← {_shift_date(day, -1)}</a>
   <a href="/?date={_shift_date(day, 1)}">{_shift_date(day, 1)} →</a>
-  <span class="spacer"></span>
   <a href="/report.json?date={day}">JSON</a>
 </nav>"""
     return render(report, "html", nav_html=nav)
 
 
-def report_json(state: AppState, day: str) -> str:
+def _full_report(state: AppState, day: str):
     roster = state.roster()
     snapshots, missing = load_reports_dir(state.reports_dir, day, roster)
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     prelim = build_report(snapshots, state.definitions, day, generated_at)
     focus_items = build_focus_items(prelim.teams)
-    report = build_report(
+    return build_report(
         snapshots, state.definitions, day, generated_at, focus_items, missing
     )
-    return render(report, "json")
+
+
+def report_json(state: AppState, day: str) -> str:
+    return render(_full_report(state, day), "json")
+
+
+def tasks_page(state: AppState, team: str = "", status: str = "",
+               toast: str = "", error: str = "") -> str:
+    return pages.tasks_page(
+        state.roster(), state.tasks.load(), _today(),
+        team_filter=team, status_filter=status, toast=toast, error=error,
+    )
+
+
+def calendar_page(state: AppState, month: str) -> str:
+    return pages.calendar_page(
+        state.roster(), state.tasks.load(),
+        pages.report_dates(state.reports_dir), month, _today(),
+    )
+
+
+def sheet_page(state: AppState, day: str) -> str:
+    return pages.sheet_page(
+        _full_report(state, day), state.tasks.load(), day, state.roster()
+    )
+
+
+def history_page(state: AppState, date_from: str = "", date_to: str = "") -> str:
+    def load_day(d: str):
+        snaps, _ = load_reports_dir(state.reports_dir, d, None)
+        return snaps
+
+    return pages.history_page(
+        pages.report_dates(state.reports_dir), load_day, state.roster(),
+        _today(), date_from=date_from, date_to=date_to,
+    )
+
+
+def handle_task_action(state: AppState, form: dict) -> tuple[bool, str]:
+    """Process a POST to /tasks. Returns ``(ok, message)``."""
+
+    def field(name: str) -> str:
+        return (form.get(name, [""])[0] or "").strip()
+
+    action = field("action")
+    due = field("due_date")
+    if due and not _DATE_RE.match(due):
+        return False, "Due date must be YYYY-MM-DD."
+    try:
+        if action == "add":
+            task = state.tasks.add(
+                title=field("title"),
+                team_id=field("team_id"),
+                assignee=field("assignee"),
+                due_date=field("due_date"),
+                notes=field("notes"),
+            )
+            return True, f"Task added: {task['title']}"
+        if action == "status":
+            task = state.tasks.update(field("id"), status=field("status"))
+            if task is None:
+                return False, "That task no longer exists."
+            verb = "marked done 🎉" if task["status"] == "done" else \
+                f"moved to {task['status'].replace('_', ' ')}"
+            return True, f"Task {verb}: {task['title']}"
+        if action == "delete":
+            if state.tasks.delete(field("id")):
+                return True, "Task deleted."
+            return False, "That task no longer exists."
+    except ValueError as e:
+        return False, str(e)
+    return False, "Unknown action."
 
 
 _FORM_CSS = """
@@ -339,18 +426,49 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         elif parsed.path == "/submit":
             team = (qs.get("team", [""])[0])[:80]
             self._send(submit_form_page(self.state, day, team))
+        elif parsed.path == "/tasks":
+            team = (qs.get("team", [""])[0])[:80]
+            status = (qs.get("status", [""])[0])[:20]
+            toast = (qs.get("ok", [""])[0])[:120]
+            error = (qs.get("err", [""])[0])[:120]
+            self._send(tasks_page(self.state, team, status, toast, error))
+        elif parsed.path == "/calendar":
+            month = (qs.get("month", [""])[0] or _today()[:7]).strip()
+            if not _MONTH_RE.match(month):
+                self._send("Bad month — use YYYY-MM.", "text/plain; charset=utf-8", 400)
+                return
+            self._send(calendar_page(self.state, month))
+        elif parsed.path == "/sheet":
+            self._send(sheet_page(self.state, day))
+        elif parsed.path == "/history":
+            date_from = (qs.get("from", [""])[0])[:10]
+            date_to = (qs.get("to", [""])[0])[:10]
+            if (date_from and not _DATE_RE.match(date_from)) or \
+               (date_to and not _DATE_RE.match(date_to)):
+                self._send("Bad date — use YYYY-MM-DD.", "text/plain; charset=utf-8", 400)
+                return
+            self._send(history_page(self.state, date_from, date_to))
         elif parsed.path == "/report.json":
             self._send(report_json(self.state, day), "application/json; charset=utf-8")
         else:
             self._send("Not found.", "text/plain; charset=utf-8", 404)
 
     def do_POST(self):  # noqa: N802
-        if urlparse(self.path).path != "/submit":
+        path = urlparse(self.path).path
+        if path not in ("/submit", "/tasks"):
             self._send("Not found.", "text/plain; charset=utf-8", 404)
             return
         length = min(int(self.headers.get("Content-Length", 0) or 0), 1_000_000)
         body = self.rfile.read(length).decode("utf-8", errors="replace")
         form = parse_qs(body, keep_blank_values=True)
+
+        if path == "/tasks":
+            ok, message = handle_task_action(self.state, form)
+            back = (form.get("back", [""])[0] or "")[:200]
+            sep = "&" if back else ""
+            key = "ok" if ok else "err"
+            self._redirect(f"/tasks?{back}{sep}{key}={quote_plus(message)}")
+            return
 
         ok, result, day = handle_submission(self.state, form)
         if ok:
@@ -370,6 +488,10 @@ def serve(reports_dir: str, roster_path: str, config_path: str | None,
     shown_host = "localhost" if host in ("0.0.0.0", "127.0.0.1", "") else host
     print("MOOV Health Check website running:")
     print(f"  Dashboard:     http://{shown_host}:{port}/")
+    print(f"  Daily sheet:   http://{shown_host}:{port}/sheet")
+    print(f"  Task list:     http://{shown_host}:{port}/tasks")
+    print(f"  Calendar:      http://{shown_host}:{port}/calendar")
+    print(f"  Saved reports: http://{shown_host}:{port}/history")
     print(f"  Team report:   http://{shown_host}:{port}/submit")
     print(f"  Reports dir:   {reports_dir}")
     print("Press Ctrl+C to stop.")
