@@ -45,14 +45,14 @@ _EMOJI = {
 }
 
 
-def render(report: DailyReport, fmt: str, color: bool = True) -> str:
+def render(report: DailyReport, fmt: str, color: bool = True, nav_html: str = "") -> str:
     fmt = fmt.lower()
     if fmt == "terminal":
         return _render_terminal(report, color=color)
     if fmt == "markdown":
         return _render_markdown(report)
     if fmt == "html":
-        return _render_html(report)
+        return _render_html(report, nav_html=nav_html)
     if fmt == "json":
         return _render_json(report)
     raise ValueError(f"Unknown format: {fmt!r}")
@@ -275,7 +275,7 @@ _HTML_COLORS = {
 }
 
 
-def _render_html(report: DailyReport) -> str:
+def _render_html(report: DailyReport, nav_html: str = "") -> str:
     def esc(s):
         return html.escape(str(s))
 
@@ -314,7 +314,10 @@ def _render_html(report: DailyReport) -> str:
             f'<div class="focus-detail">{esc(item.detail)}</div></div></li>'
         )
     if not focus_html:
-        focus_html.append('<li class="focus focus-green"><div><div class="focus-head">All clear — no off-target metrics today.</div></div></li>')
+        if report.teams:
+            focus_html.append('<li class="focus focus-green"><div><div class="focus-head">All clear — no off-target metrics today.</div></div></li>')
+        else:
+            focus_html.append('<li class="focus"><div><div class="focus-head">No team reports filed yet today.</div></div></li>')
 
     themes = fleet_themes(report.focus_items)
     themes_html = "".join(
@@ -417,6 +420,9 @@ footer {{ margin-top:36px; color:#6b7078; font-size:12px; }}
 @media (prefers-color-scheme: light) {{
   body {{ background:#f6f7f9; color:#1a1d22; }}
   .hero, li.focus, .team-report {{ background:#fff; border-color:#e3e6ea; }}
+  .counts {{ color:#5a6068; }}
+  .counts b {{ color:#1a1d22; }}
+  .focus-detail {{ color:#5a6068; }}
   .team-report {{ border-left-width:4px; }}
   .tr-line {{ color:#3a3f47; }}
   header {{ border-color:#e3e6ea; }}
@@ -424,8 +430,19 @@ footer {{ margin-top:36px; color:#6b7078; font-size:12px; }}
   .region-row td {{ background:#f0f2f5; }}
   .theme {{ background:#eceef1; color:#3a3f47; }}
 }}
+.nav {{ display:flex; align-items:center; gap:14px; margin-bottom:18px; font-size:14px; }}
+.nav a {{ color:#8ab4f8; text-decoration:none; padding:6px 12px; border:1px solid #262a31;
+  border-radius:8px; background:#171a21; }}
+.nav a:hover {{ border-color:#8ab4f8; }}
+.nav a.primary {{ background:#1e9e5a; color:#fff; border-color:#1e9e5a; font-weight:600; }}
+.nav .spacer {{ margin-left:auto; }}
+@media (prefers-color-scheme: light) {{
+  .nav a {{ background:#fff; border-color:#e3e6ea; color:#1a56db; }}
+  .nav a.primary {{ background:#1e9e5a; color:#fff; }}
+}}
 </style></head>
 <body><div class="wrap">
+{nav_html}
 <header>
   <h1>🚦 MOOV Operations — Daily Health Check</h1>
   <div class="sub">{esc(report.report_date)} · generated {esc(report.generated_at)}</div>

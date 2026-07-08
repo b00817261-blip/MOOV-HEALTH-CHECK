@@ -16,7 +16,7 @@ from .models import DailyReport, Status, TeamHealth
 from .report import render
 from .submit import build_submission, save_submission
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 __all__ = [
     "__version__",

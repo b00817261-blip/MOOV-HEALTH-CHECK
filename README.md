@@ -16,6 +16,41 @@ install in any timezone: laptop, server, container, or cron job.
 
 ---
 
+## 🌐 The website (easiest way to use it)
+
+```bash
+python -m moov_health_check serve
+```
+
+Then open **http://localhost:8000** — that's it. No frameworks, no database,
+nothing else to install.
+
+| Page | Who uses it | What it does |
+|------|-------------|--------------|
+| `/` | The manager | The daily dashboard: fleet health, work focus, every team's report, and who hasn't reported yet. Browse any date. |
+| `/submit` | Team leads | A two-minute form: pick your team, enter today's numbers, answer three questions (done / blockers / plan), hit **Send report to my manager**. |
+| `/report.json` | Other systems | The same data, machine-readable. |
+
+To make it reachable by teams around the world, run it on any small server or
+VM the teams can reach (an office server, a $5 cloud VM behind your company
+VPN) — it binds to your network by default:
+
+```bash
+moov-health-check serve --port 8000 --reports-dir /srv/moov/reports
+# team leads open  http://your-server:8000/submit
+# the manager opens http://your-server:8000/
+```
+
+Submissions land as plain JSON files in the reports directory, so the website
+and the CLI commands below are fully interchangeable — teams can use the form
+while a script feeds in numbers from another system.
+
+> ⚠️ The built-in server has no login — run it on a trusted network (office
+> LAN/VPN), or put it behind a reverse proxy with authentication if it must be
+> internet-facing.
+
+---
+
 ## The daily loop
 
 ```
@@ -198,6 +233,16 @@ export instead of team submissions.
 | `--date, -d` | Report date (default today, UTC). |
 | `--team-name / --team-region / --team-timezone` | Identify a team not in the roster. |
 
+### `moov-health-check serve`
+
+| Flag | Description |
+|------|-------------|
+| `--reports-dir, -R DIR` | Shared reports directory (default `./reports`). |
+| `--roster PATH` | Roster JSON (default `config/teams.json`). |
+| `--config, -c PATH` | Custom thresholds JSON. |
+| `--host` | Bind address (default `0.0.0.0`). |
+| `--port, -p` | Port (default `8000`). |
+
 ### `moov-health-check report`
 
 | Flag | Description |
@@ -234,8 +279,9 @@ src/moov_health_check/
   health.py    # RAG evaluation and team/region/fleet rollups
   focus.py     # work-focus recommendation engine + fleet themes
   report.py    # terminal / markdown / html / json renderers
+  web.py       # the website: dashboard + submission form (stdlib http.server)
   sample.py    # synthetic global data for --demo
-  cli.py       # `submit` and `report` subcommands
+  cli.py       # `serve`, `submit`, and `report` subcommands
 config/teams.json            # the team roster (who must report daily)
 config/thresholds.json       # the default KPI catalogue
 data/sample_reports/         # a sample day of team submissions

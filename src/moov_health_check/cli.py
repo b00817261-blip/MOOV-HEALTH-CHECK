@@ -39,7 +39,7 @@ from .report import render
 from .sample import generate_snapshots
 from . import submit as submit_mod
 
-_COMMANDS = {"report", "submit"}
+_COMMANDS = {"report", "submit", "serve"}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -101,6 +101,18 @@ def build_parser() -> argparse.ArgumentParser:
     sb.add_argument("--team-name", default="", help="Team display name (if not in roster).")
     sb.add_argument("--team-region", default="", help="Team region (if not in roster).")
     sb.add_argument("--team-timezone", default="", help="Team timezone (if not in roster).")
+
+    # ------------------------------------------------------------------ serve
+    sv = sub.add_parser(
+        "serve",
+        help="Run the website: a dashboard for the manager, a form for the teams.",
+        description="Serve the MOOV Health Check website (stdlib only, no frameworks).",
+    )
+    sv.add_argument("--reports-dir", "-R", default="reports", help="Shared reports directory (default: ./reports).")
+    sv.add_argument("--roster", default="config/teams.json", help="Roster JSON (default: config/teams.json).")
+    sv.add_argument("--config", "-c", help="Path to a custom thresholds JSON file.")
+    sv.add_argument("--host", default="0.0.0.0", help="Bind address (default: 0.0.0.0 — reachable on your network).")
+    sv.add_argument("--port", "-p", type=int, default=8000, help="Port (default: 8000).")
     return p
 
 
@@ -282,6 +294,10 @@ def run(argv=None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "submit":
         return _cmd_submit(args)
+    if args.command == "serve":
+        from .web import serve
+        serve(args.reports_dir, args.roster, args.config, args.host, args.port)
+        return 0
     return _cmd_report(args)
 
 
