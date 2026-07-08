@@ -1,0 +1,85 @@
+"""Load daily team snapshots from an input file (JSON or CSV).
+
+The input describes, per team, the raw KPI values captured for the day. This
+layer is intentionally forgiving: unknown metric keys are ignored (with a note)
+and missing metrics are treated as UNKNOWN downstream.
+"""
+
+from __future__ import annotations
+
+import csv
+import json
+from pathlib import Path
+
+from .models import TeamSnapshot
+
+
+def _snapshot_from_dict(raw: dict) -> TeamSnapshot:
+    return TeamSnapshot(
+        team_id=str(raw["team_id"]),
+        team_name=raw.get("team_name", raw["team_id"]),
+        region=raw.get("region", "Global"),
+        timezone=raw.get("timezone", "UTC"),
+        manager=raw.get("manager", ""),
+        metrics={k: _num(v) for k, v in raw.get("metrics", {}).items()},
+        notes=raw.get("notes", ""),
+        prev_metrics={k: _num(v) for k, v in raw.get("prev_metrics", {}).items()},
+    )
+
+
+def _num(value):
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def load_snapshots(input_path: str) -> tuple[list, str | None]:
+    """Return ``(snapshots, report_date)`` from a JSON or CSV file."""
+    path = Path(input_path)
+    if path.suffix.lower() == ".csv":
+        return _load_csv(path), None
+    return _load_json(path)
+
+
+def _load_json(path: Path) -> tuple[list, str | None]:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if isinstance(data, list):
+        teams_raw = data
+        report_date = None
+    else:
+        teams_raw = data.get("teams", [])
+        report_date = data.get("report_date")
+    snapshots = [_snapshot_from_dict(t) for t in teams_raw]
+    return snapshots, report_date
+
+
+# Reserved (non-metric) columns in a CSV upload.
+_META_COLUMNS = {"team_id", "team_name", "region", "timezone", "manager", "notes"}
+
+
+def _load_csv(path: Path) -> list:
+    """Load a wide CSV where each row is a team and metric keys are columns."""
+    snapshots = []
+    with path.open(newline="", encoding="utf-8") as fh:
+        reader = csv.DictReader(fh)
+        for row in reader:
+            metrics = {
+                k: _num(v)
+                for k, v in row.items()
+                if k not in _META_COLUMNS and k is not None
+            }
+            snapshots.append(
+                TeamSnapshot(
+                    team_id=str(row["team_id"]),
+                    team_name=row.get("team_name") or row["team_id"],
+                    region=row.get("region") or "Global",
+                    timezone=row.get("timezone") or "UTC",
+                    manager=row.get("manager", ""),
+                    metrics=metrics,
+                    notes=row.get("notes", ""),
+                )
+            )
+    return snapshots

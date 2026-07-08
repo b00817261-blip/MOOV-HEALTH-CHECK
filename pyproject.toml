@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "moov-health-check"
+version = "1.0.0"
+description = "Daily operations health-check & work-focus report for operations managers worldwide."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+keywords = ["operations", "health-check", "daily-report", "kpi", "dashboard", "ops"]
+dependencies = []  # zero third-party dependencies — runs on a bare Python install
+
+[project.scripts]
+moov-health-check = "moov_health_check.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

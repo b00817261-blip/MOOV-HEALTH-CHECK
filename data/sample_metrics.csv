@@ -1,0 +1,10 @@
+team_id,team_name,region,timezone,manager,sla_attainment,on_time_dispatch,open_p1_incidents,backlog_jobs,fleet_availability,staffing_level,csat,error_rate,safety_events,cost_per_job
+apac-syd,Sydney Hub,APAC,Australia/Sydney,Priya Nair,96.1,98.1,0.0,25.0,94.2,98.6,91.5,0.7,0.0,12.1
+apac-sin,Singapore Hub,APAC,Asia/Singapore,Wei Chen,97.6,98.3,0.0,13.0,95.3,97.6,92.9,1.1,0.0,12.0
+apac-tyo,Tokyo Hub,APAC,Asia/Tokyo,Kenji Sato,92.1,96.9,1.0,44.0,92.4,89.0,85.9,2.0,0.0,14.1
+emea-lon,London Hub,EMEA,Europe/London,Aoife Byrne,97.9,98.2,0.0,23.0,95.4,98.1,93.7,0.5,0.0,10.7
+emea-ber,Berlin Hub,EMEA,Europe/Berlin,Lukas Weber,95.7,94.7,0.0,49.0,87.4,90.9,84.4,3.0,0.0,14.3
+emea-dxb,Dubai Hub,EMEA,Asia/Dubai,Sara Al-Farsi,85.3,85.5,1.0,84.0,84.7,82.1,77.2,3.1,1.0,18.5
+amer-nyc,New York Hub,Americas,America/New_York,Diego Ramirez,92.2,95.9,1.0,52.0,92.7,93.9,87.4,1.6,0.0,13.1
+amer-sfo,San Francisco Hub,Americas,America/Los_Angeles,Jordan Lee,97.0,97.7,0.0,29.0,94.0,97.3,92.8,0.4,0.0,11.4
+amer-sao,São Paulo Hub,Americas,America/Sao_Paulo,Camila Souza,90.7,92.3,3.0,95.0,83.1,80.1,71.6,5.8,2.0,16.0
