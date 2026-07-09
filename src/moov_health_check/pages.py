@@ -346,6 +346,7 @@ def tasks_page(roster: dict, tasks: list, today: str, user: dict | None = None,
         back_qs.append(f"status={status_filter}")
     back = "&".join(back_qs)
 
+    me_name = ((user or {}).get("name") or "").strip().lower()
     rows = []
     for t in shown:
         tid = esc(t["id"])
@@ -359,9 +360,10 @@ def tasks_page(roster: dict, tasks: list, today: str, user: dict | None = None,
             who = f'{esc(t["assignee"])} <span class="muted">({esc(who)})</span>'
         else:
             who = esc(who)
-        if can_manage:
-            # The manager assigns and removes work — each group updates its
-            # own status, so there is nothing to "tick" here.
+        is_assigner = bool(me_name) and \
+            (t.get("created_by") or "").strip().lower() == me_name
+        if is_assigner:
+            # Only the person who assigned a task can remove it.
             actions = (f'<form method="post" action="/tasks" class="rowform" '
                        f'onsubmit="return confirm(\'Delete this task?\')">'
                        f'<input type="hidden" name="action" value="delete">'
@@ -369,6 +371,8 @@ def tasks_page(roster: dict, tasks: list, today: str, user: dict | None = None,
                        f'<input type="hidden" name="back" value="{esc(back)}">'
                        f'<button type="submit" class="danger" title="Delete">✕ Remove</button></form>')
         else:
+            # You're doing this task: move its status, tick it done, or — if
+            # you can't — raise a request to your lead instead of removing it.
             opts = "".join(
                 f'<option value="{k}"{" selected" if t.get("status") == k else ""}>{v}</option>'
                 for k, v in tasks_mod.STATUSES.items()
@@ -381,6 +385,25 @@ def tasks_page(roster: dict, tasks: list, today: str, user: dict | None = None,
                             f'<input type="hidden" name="status" value="done">'
                             f'<input type="hidden" name="back" value="{esc(back)}">'
                             f'<button type="submit" title="Mark done">✓ Done</button></form>')
+            reason_opts = "".join(
+                f'<label style="display:inline-block;margin:2px 8px 2px 0;font-size:13px">'
+                f'<input type="radio" name="reason" value="{k}"> {esc(v)}</label>'
+                for k, v in tasks_mod.FRICTION_REASONS.items()
+            )
+            request_form = f"""<details class="reqform">
+  <summary>🙁 Can't do it / need more time</summary>
+  <form method="post" action="/tasks">
+    <input type="hidden" name="action" value="request">
+    <input type="hidden" name="id" value="{tid}">
+    <input type="hidden" name="back" value="{esc(back)}">
+    <div class="q">What's the problem?</div>
+    <div>{reason_opts}</div>
+    <div class="q">Propose a new due date <span class="muted">(optional — leave blank if you just can't do it)</span></div>
+    <input type="date" name="proposed_due">
+    <input type="text" name="note" placeholder="A note for your lead (optional)" style="width:100%;margin-top:6px">
+    <button type="submit" class="ghost" style="margin-top:8px">Send to my lead</button>
+  </form>
+</details>"""
             actions = f"""<div class="rowform">
   <form method="post" action="/tasks" class="rowform">
     <input type="hidden" name="action" value="status">
@@ -390,7 +413,8 @@ def tasks_page(roster: dict, tasks: list, today: str, user: dict | None = None,
     <button type="submit" class="ghost">Save</button>
   </form>
   {done_btn}
-</div>"""
+</div>
+{request_form}"""
         rows.append(f"""<tr>
 <td><b>{esc(t.get('title', ''))}</b>{f'<div class="muted" style="font-size:12px">{esc(t["notes"])}</div>' if t.get('notes') else ''}</td>
 <td>{who}</td>
@@ -429,7 +453,19 @@ def tasks_page(roster: dict, tasks: list, today: str, user: dict | None = None,
 <thead><tr><th>Task</th><th>Assigned to</th><th>Status</th><th>Due date</th><th>{last_col}</th></tr></thead>
 <tbody>{''.join(rows)}</tbody>
 </table></div>"""
-    return shell("Tasks", "tasks", today, body, user=user)
+    return shell("Tasks", "tasks", today, body, extra_css=_TASKS_CSS, user=user)
+
+
+_TASKS_CSS = """
+details.reqform { margin-top: 8px; }
+details.reqform summary { list-style: none; cursor: pointer; color: #d99513;
+  font-size: 13px; display: inline-block; }
+details.reqform summary::-webkit-details-marker { display: none; }
+details.reqform[open] summary { margin-bottom: 4px; }
+details.reqform .q { font-size: 12px; color: #8a8f98; margin: 8px 0 4px; }
+details.reqform label { color: #b7bcc4; }
+@media (prefers-color-scheme: light) { details.reqform label { color: #5a6068; } }
+"""
 
 
 # ---------------------------------------------------------------------------
@@ -963,8 +999,52 @@ def _initials(name: str) -> str:
     return (words[0][0] + words[1][0]).upper()
 
 
+def _requests_card(requests: list) -> str:
+    """The leader's inbox of 'can't do it' / 'extend the deadline' requests."""
+    if not requests:
+        return ""
+    items = []
+    for r in requests:
+        tid = esc(r["task_id"])
+        rid = esc(r["request_id"])
+        if r["proposed_due"]:
+            frm = f' from {esc(r["current_due"])}' if r["current_due"] else ""
+            ask = f'wants to move the deadline{frm} to <b>{esc(r["proposed_due"])}</b>'
+            approve = f'✓ Extend to {esc(r["proposed_due"])}'
+        else:
+            ask = "flagged they can’t get this done"
+            approve = "✓ Mark as waiting"
+        reason = f' · <span class="muted">{esc(r["reason"])}</span>' if r["reason"] else ""
+        note = (f'<div class="muted" style="font-size:13px;margin-top:2px">'
+                f'“{esc(r["note"])}”</div>') if r["note"] else ""
+
+        def button(decision, label, cls=""):
+            return (f'<form method="post" action="/tasks" style="display:inline">'
+                    f'<input type="hidden" name="action" value="resolve">'
+                    f'<input type="hidden" name="id" value="{tid}">'
+                    f'<input type="hidden" name="request_id" value="{rid}">'
+                    f'<input type="hidden" name="decision" value="{decision}">'
+                    f'<input type="hidden" name="back" value="dash">'
+                    f'<button type="submit"{cls}>{label}</button></form>')
+
+        items.append(
+            f'<li style="padding:11px 0;border-bottom:1px solid #262a31">'
+            f'<div><b>{esc(r["by"]) or "Someone"}</b> {ask} on '
+            f'<b>{esc(r["title"])}</b> <span class="muted">· {esc(r["group"])}</span>'
+            f'{reason}</div>{note}'
+            f'<div style="margin-top:8px;display:flex;gap:8px">'
+            f'{button("approve", approve)}'
+            f'{button("decline", "Decline", cls=" class=ghost")}</div></li>'
+        )
+    return (f'<div class="card" style="border-left:4px solid #d99513">'
+            f'<h3>⏳ Requests to review '
+            f'<span class="muted">· {len(requests)} pending</span></h3>'
+            f'<ul style="list-style:none;margin:0;padding:0">{"".join(items)}</ul></div>')
+
+
 def completion_dashboard(stats: dict, day: str, user: dict | None = None,
-                         submitted: str = "") -> str:
+                         submitted: str = "", toast: str = "",
+                         error: str = "") -> str:
     tiles = stats["tiles"]
     g_total = stats["groups_total"]
 
@@ -984,9 +1064,13 @@ def completion_dashboard(stats: dict, day: str, user: dict | None = None,
     pill = (f'<span class="{pill_cls}">{pct}% complete · '
             f'{stats["on_track"]} of {g_total} on track</span>')
 
-    toast = ""
+    toast_html = ""
     if submitted:
-        toast = f'<div class="toast">✓ Report received from <b>{esc(submitted)}</b></div>'
+        toast_html += f'<div class="toast">✓ Report received from <b>{esc(submitted)}</b></div>'
+    if toast:
+        toast_html += f'<div class="toast">✓ {esc(toast)}</div>'
+    if error:
+        toast_html += f'<div class="toast error">⚠ {esc(error)}</div>'
 
     tiles_html = f"""<div class="tiles4">
 <div class="stat"><div class="k">Tasks completed</div>
@@ -1055,7 +1139,8 @@ def completion_dashboard(stats: dict, day: str, user: dict | None = None,
 {pill}
 </div>
 <div style="height:16px"></div>
-{toast}
+{toast_html}
+{_requests_card(stats.get("requests", []))}
 {tiles_html}
 <div class="card"><h3>Team roster</h3>
 {''.join(rows)}

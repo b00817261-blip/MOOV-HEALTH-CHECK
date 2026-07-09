@@ -317,9 +317,26 @@ def completion_stats(state: AppState, day: str, roster: dict | None = None) -> d
          round(100 * clean_count / g_total) if g_total else 0),
     ]
 
+    requests = []
+    for t, req in tasks_mod.pending_requests(all_tasks):
+        requests.append({
+            "task_id": t["id"],
+            "request_id": req.get("id", ""),
+            "title": t.get("title", ""),
+            "group": team_names.get(t.get("team_id", ""), t.get("team_id", ""))
+            or "unassigned",
+            "by": req.get("by", ""),
+            "reason": tasks_mod.FRICTION_REASONS.get(req.get("reason", ""),
+                                                     req.get("reason", "")),
+            "note": req.get("note", ""),
+            "current_due": t.get("due_date", ""),
+            "proposed_due": req.get("proposed_due", ""),
+        })
+
     d = date_cls.fromisoformat(day)
     day_label = f"{d.strftime('%A')}, {d.day} {d.strftime('%B')} · {g_total} group(s)"
     return {
+        "requests": requests,
         "day_label": day_label,
         "generated_at": datetime.now(timezone.utc).strftime("%H:%M UTC"),
         "tiles": {"done": len(done), "total": len(tasks),
@@ -336,11 +353,12 @@ def completion_stats(state: AppState, day: str, roster: dict | None = None) -> d
 
 
 def dashboard_page(state: AppState, day: str, submitted_team: str = "",
-                   user: dict | None = None) -> str:
+                   user: dict | None = None, toast: str = "",
+                   error: str = "") -> str:
     roster = _scoped_roster(state, user)
     return pages.completion_dashboard(
         completion_stats(state, day, roster), day, user=user,
-        submitted=submitted_team
+        submitted=submitted_team, toast=toast, error=error
     )
 
 
@@ -551,15 +569,51 @@ def handle_task_action(state: AppState, form: dict, user: dict) -> tuple[bool, s
                 f"moved to {task['status'].replace('_', ' ')}"
             return True, f"Task {verb}: {task['title']}"
         if action == "delete":
+            task = state.tasks.get(field("id"))
+            if task is None:
+                return False, "That task no longer exists."
+            assigner = (task.get("created_by") or "").strip().lower()
+            me = (user.get("name") or "").strip().lower()
+            if not assigner or assigner != me:
+                return False, "Only the person who assigned this task can remove it."
+            state.tasks.delete(task["id"])
+            return True, "Task removed."
+        if action == "request":
+            task = state.tasks.get(field("id"))
+            if task is None:
+                return False, "That task no longer exists."
+            if not pages.visible_tasks([task], user):
+                return False, "That task belongs to another group."
+            proposed = field("proposed_due")
+            if proposed and not _DATE_RE.match(proposed):
+                return False, "New due date must be YYYY-MM-DD."
+            kind = "extend" if proposed else "cant"
+            state.tasks.add_request(
+                task["id"], kind, by=user.get("name", ""),
+                reason=field("reason"), note=field("note"),
+                proposed_due=proposed)
+            if kind == "extend":
+                return True, "Extension request sent to your lead."
+            return True, "Flagged for your lead — they'll take a look."
+        if action == "resolve":
             if not is_manager:
-                return False, "Only a group's leader can remove tasks."
+                return False, "Only a group's leader can answer requests."
             task = state.tasks.get(field("id"))
             if task is None:
                 return False, "That task no longer exists."
             if not (user.get("is_root") or task.get("team_id") in scope):
                 return False, "That task isn't in a group you manage."
-            state.tasks.delete(task["id"])
-            return True, "Task removed."
+            result = state.tasks.resolve_request(
+                task["id"], field("request_id"), field("decision"),
+                by=user.get("name", ""))
+            if result is None:
+                return False, "That request was already handled."
+            _, req = result
+            if req["status"] == "approved" and req.get("proposed_due"):
+                return True, f"Deadline moved to {req['proposed_due']}."
+            if req["status"] == "approved":
+                return True, "Request approved — task flagged as waiting."
+            return True, "Request declined."
     except ValueError as e:
         return False, str(e)
     return False, "Unknown action."
@@ -660,7 +714,10 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
                 self._redirect("/me")
                 return
             submitted = (qs.get("submitted", [""])[0])[:80]
-            self._send(dashboard_page(self.state, day, submitted, user=user))
+            toast = (qs.get("ok", [""])[0])[:160]
+            error = (qs.get("err", [""])[0])[:160]
+            self._send(dashboard_page(self.state, day, submitted, user=user,
+                                      toast=toast, error=error))
         elif path == "/me":
             try:
                 sent = int((qs.get("sent", ["0"])[0] or "0")[:4])
@@ -781,6 +838,8 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
             key = "ok" if ok else "err"
             if back == "me":
                 self._redirect(f"/me?{key}={quote_plus(message)}")
+            elif back == "dash":
+                self._redirect(f"/?{key}={quote_plus(message)}")
             else:
                 sep = "&" if back else ""
                 self._redirect(f"/tasks?{back}{sep}{key}={quote_plus(message)}")

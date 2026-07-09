@@ -263,6 +263,11 @@ def _task_id(body: str) -> str:
     return body.split('name="id" value="')[1].split('"')[0]
 
 
+def _request_id(server, task_id: str) -> str:
+    task = HealthCheckHandler.state.tasks.get(task_id)
+    return task["requests"][-1]["id"]
+
+
 def test_updates_assemble_the_report_with_link_and_friction(server):
     m = head(server, name="Derek")
     _, body = m.post("/tasks", {"action": "add", "title": "Chase carrier on SHPX-9920",
@@ -349,10 +354,62 @@ def test_task_lifecycle(server):
     _, dash = m.get("/")
     assert "Quarterly forecast" in dash
 
+    # The member doing the task can't remove it.
     _, body = w.post("/tasks", {"action": "delete", "id": task_id})
-    assert "leader can remove" in body
+    assert "person who assigned this task can remove it" in body
+    # Only the assigner (the head who created it) can.
     _, body = m.post("/tasks", {"action": "delete", "id": task_id})
     assert "Task removed" in body
+
+
+def test_member_requests_extension_and_lead_approves(server):
+    m = head(server)
+    _, body = m.post("/tasks", {"action": "add", "title": "Monthly close",
+                                "team_id": "t1", "assignee": "Aki",
+                                "due_date": "2030-01-15"})
+    tid = _task_id(body)
+
+    w = member(server, "t1", "Aki")
+    _, body = w.post("/tasks", {"action": "request", "id": tid,
+                                "reason": "time", "proposed_due": "2030-02-01",
+                                "note": "need a couple more weeks"})
+    assert "Extension request sent" in body
+
+    # The lead sees the pending request on the dashboard.
+    _, dash = m.get("/")
+    assert "Requests to review" in dash
+    assert "Aki" in dash and "2030-02-01" in dash and "Monthly close" in dash
+
+    rid = _request_id(server, tid)
+    _, body = m.post("/tasks", {"action": "resolve", "id": tid,
+                                "request_id": rid, "decision": "approve",
+                                "back": "dash"})
+    assert "Deadline moved to 2030-02-01" in body
+    # The due date really moved, and the request is gone.
+    assert HealthCheckHandler.state.tasks.get(tid)["due_date"] == "2030-02-01"
+    _, dash = m.get("/")
+    assert "Requests to review" not in dash
+
+
+def test_member_cant_do_it_and_lead_declines(server):
+    m = head(server)
+    _, body = m.post("/tasks", {"action": "add", "title": "Audit prep",
+                                "team_id": "t1", "assignee": "Aki"})
+    tid = _task_id(body)
+
+    w = member(server, "t1", "Aki")
+    _, body = w.post("/tasks", {"action": "request", "id": tid, "reason": "scope"})
+    assert "Flagged for your lead" in body
+
+    rid = _request_id(server, tid)
+    _, body = m.post("/tasks", {"action": "resolve", "id": tid,
+                                "request_id": rid, "decision": "decline",
+                                "back": "dash"})
+    assert "Request declined" in body
+    # A member cannot answer requests.
+    _, body = w.post("/tasks", {"action": "resolve", "id": tid,
+                                "request_id": rid, "decision": "approve"})
+    assert "leader can answer requests" in body
 
 
 def test_calendar_shows_deadlines_and_updates(server):

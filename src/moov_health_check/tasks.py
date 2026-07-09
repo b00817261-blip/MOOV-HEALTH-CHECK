@@ -240,3 +240,72 @@ class TaskStore:
                 return False
             self._save(kept)
         return True
+
+    # -- requests -----------------------------------------------------------
+    # The person doing a task can't remove it — instead they raise a request
+    # to their lead: "I can't do this" or "please extend the deadline". The
+    # lead sees pending requests on their dashboard and approves or declines.
+    def add_request(self, task_id: str, kind: str, by: str = "",
+                    reason: str = "", note: str = "",
+                    proposed_due: str = "") -> dict | None:
+        if kind not in ("extend", "cant"):
+            raise ValueError(f"Unknown request kind {kind!r}.")
+        if reason and reason not in FRICTION_REASONS:
+            raise ValueError(f"Unknown reason {reason!r}.")
+        req = {
+            "id": uuid.uuid4().hex[:8],
+            "kind": kind,
+            "by": by.strip(),
+            "reason": reason,
+            "note": note.strip(),
+            "proposed_due": proposed_due.strip(),
+            "status": "pending",
+            "at": _now(),
+        }
+        with self._lock:
+            tasks = self.load()
+            for t in tasks:
+                if t["id"] == task_id:
+                    t.setdefault("requests", []).append(req)
+                    t["updated_at"] = _now()
+                    self._save(tasks)
+                    return req
+        return None
+
+    def resolve_request(self, task_id: str, request_id: str, decision: str,
+                        by: str = "") -> tuple[dict, dict] | None:
+        """Approve or decline a pending request. Approving an extension moves
+        the due date; approving a "can't do it" flags the task as waiting.
+        Returns ``(task, request)`` or None if there was nothing to resolve."""
+        if decision not in ("approve", "decline"):
+            raise ValueError(f"Unknown decision {decision!r}.")
+        with self._lock:
+            tasks = self.load()
+            for t in tasks:
+                if t["id"] != task_id:
+                    continue
+                for req in t.get("requests", []):
+                    if req.get("id") != request_id or req.get("status") != "pending":
+                        continue
+                    req["status"] = "approved" if decision == "approve" else "declined"
+                    req["resolved_by"] = by.strip()
+                    req["resolved_at"] = _now()
+                    if decision == "approve":
+                        if req.get("proposed_due"):
+                            t["due_date"] = req["proposed_due"]
+                        elif req.get("kind") == "cant":
+                            t["status"] = "waiting"
+                    t["updated_at"] = _now()
+                    self._save(tasks)
+                    return t, req
+        return None
+
+
+def pending_requests(tasks: list) -> list:
+    """Every still-open request across the given tasks, as ``(task, request)``."""
+    out = []
+    for t in tasks:
+        for req in (t.get("requests") or []):
+            if req.get("status") == "pending":
+                out.append((t, req))
+    return out
