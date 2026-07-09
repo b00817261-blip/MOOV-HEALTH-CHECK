@@ -25,16 +25,34 @@ python -m moov_health_check serve
 Then open **http://localhost:8000** — that's it. No frameworks, no database,
 nothing else to install.
 
-| Page | Who uses it | What it does |
-|------|-------------|--------------|
-| `/` | The manager | The daily dashboard: fleet health, work focus, every team's report, and who hasn't reported yet. Browse any date. |
-| `/submit` | Team leads | A two-minute form: pick your team, enter today's numbers, answer three questions (done / blockers / plan), hit **Send report to my manager**. |
-| `/tasks` | Everyone | The **employee task list**: the manager adds a task with an assignee and a deadline; the team updates the status (To-do / In progress / Waiting) and ticks it **✓ Done**. Status chips, overdue flags, and Trello-style "per status" / "per due date" summary bars. |
-| `/calendar` | Everyone | A month view of task deadlines and filed reports — click any day to open its daily sheet. |
-| `/sheet` | The manager | A printable **Daily Status Report** sheet for any date: KPI tiles (fleet score, teams reported, task completion, blockers), completed activities, in-progress tasks, issues & escalations, and today's objectives. Print it to PDF straight from the browser. |
-| `/history` | The manager | **Saved reports**: every day the teams have reported, plus a consolidated table over any date range. |
-| `/report.json` | Other systems | The same data, machine-readable. |
+The site opens on a **sign-in screen with two doors** — one website, two
+completely different workspaces:
 
+### 👔 The manager's workspace (blue)
+
+| Page | What it does |
+|------|--------------|
+| `/` | The daily dashboard: fleet health, work focus, every team's report, and who hasn't reported yet. Browse any date. |
+| `/tasks` | The **employee task list**: add a task with a team/person and a deadline, watch statuses move, delete what's obsolete. Status chips, overdue flags, and Trello-style "per status" / "per due date" summary bars. |
+| `/sheet` | A printable **Daily Status Report** for any date: KPI tiles (fleet score, teams reported, task completion, blockers), completed activities, in-progress tasks, issues & escalations, and today's objectives. Print to PDF straight from the browser. |
+| `/calendar` | A month view of every deadline and every filed report — click a day to open its sheet. |
+| `/history` | **Saved reports**: every day the teams have reported, plus a consolidated table over any date range. |
+
+### 🧑‍🔧 A team member's workspace (green)
+
+| Page | What it does |
+|------|--------------|
+| `/me` | **My day**: has my team reported yet? (one-click to file), my team's performance dashboard once the report is in, my open tasks with **✓ Done** buttons. |
+| `/submit` | The two-minute daily report form, locked to their own team, name prefilled. |
+| `/tasks` | Only *their* tasks (their team's, theirs by name, or unassigned) — they update statuses but can't add or delete. |
+| `/calendar` | Their deadlines and reporting days. |
+
+Signing in is picking a door (plus your team and name if you're a team
+member) — a cookie remembers it, **Sign out** switches roles. There are
+deliberately no passwords: the site is designed for a trusted office
+network/VPN, and the roles separate *workspaces*, not secrets.
+
+`/report.json` stays open for other systems (cron jobs, Slack bots, …).
 Tasks are stored in `<reports-dir>/tasks.json`, right next to the daily report
 folders — share the directory and you share the whole site's data.
 

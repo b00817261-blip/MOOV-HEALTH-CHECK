@@ -103,6 +103,38 @@ button.danger:hover { border-color: #d64545; }
   text-overflow: ellipsis; color: #c7ccd3; }
 .cal .rep { display: inline-block; font-size: 11px; color: #1e9e5a; margin-top: 2px; }
 footer { margin-top: 36px; color: #6b7078; font-size: 12px; }
+/* Role identity — the manager and team-member workspaces look different */
+.role-chip { font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
+  padding: 3px 10px; border-radius: 20px; font-weight: 700; white-space: nowrap; }
+.role-chip.manager { color: #5b9cf5; border: 1px solid #5b9cf5; background: rgba(91,156,245,.12); }
+.role-chip.worker { color: #2fae6e; border: 1px solid #2fae6e; background: rgba(47,174,110,.12); }
+body.role-manager .topnav a.active { border-color: #5b9cf5; color: #5b9cf5; }
+body.role-worker .topnav a.active { border-color: #2fae6e; color: #2fae6e; }
+body.role-manager .topnav { border-top: 3px solid #5b9cf5; padding-top: 10px; }
+body.role-worker .topnav { border-top: 3px solid #2fae6e; padding-top: 10px; }
+.signout { font-size: 12px; color: #6b7078 !important; border: 0 !important; background: none !important; }
+/* Login */
+.login-hero { text-align: center; margin: 40px 0 30px; }
+.login-hero h1 { font-size: 30px; }
+.login-card { padding: 24px; }
+.login-card h3 { font-size: 17px; margin-bottom: 4px; }
+.login-card .desc { color: #8a8f98; font-size: 13px; margin-bottom: 16px; }
+.login-card form { display: flex; flex-direction: column; gap: 10px; }
+.login-card button { padding: 12px; font-size: 15px; }
+.login-card.manager { border-top: 4px solid #5b9cf5; }
+.login-card.manager button { background: #3d7fe0; }
+.login-card.manager button:hover { background: #5b9cf5; }
+.login-card.worker { border-top: 4px solid #2fae6e; }
+/* My day */
+.me-card { border-left: 4px solid #262a31; }
+.me-card.ok { border-left-color: #1e9e5a; }
+.me-card.warn { border-left-color: #d99513; }
+.bigscore { font-size: 34px; font-weight: 800; }
+.bigscore small { font-size: 14px; color: #8a8f98; font-weight: 400; }
+.metric-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.cta { display: inline-block; padding: 12px 20px; background: #1e9e5a; color: #fff !important;
+  border-radius: 10px; font-weight: 700; margin-top: 8px; }
+.cta:hover { background: #23b568; }
 @media (prefers-color-scheme: light) {
   body { background: #f6f7f9; color: #1a1d22; }
   .card, .topnav a { background: #fff; border-color: #e3e6ea; }
@@ -123,34 +155,56 @@ footer { margin-top: 36px; color: #6b7078; font-size: 12px; }
 """
 
 
-def nav(active: str, day: str) -> str:
+def nav(active: str, day: str, user: dict | None = None) -> str:
     d = esc(day)
-    month = day[:7]
-    links = [
-        ("dashboard", f"/?date={d}", "📊 Dashboard"),
-        ("sheet", f"/sheet?date={d}", "📄 Daily sheet"),
-        ("tasks", "/tasks", "✅ Tasks"),
-        ("calendar", f"/calendar?month={esc(month)}", "🗓 Calendar"),
-        ("history", "/history", "🗂 Saved reports"),
-    ]
+    month = esc(day[:7])
+    role = (user or {}).get("role", "")
+    if role == "manager":
+        links = [
+            ("dashboard", f"/?date={d}", "📊 Dashboard"),
+            ("sheet", f"/sheet?date={d}", "📄 Daily sheet"),
+            ("tasks", "/tasks", "✅ Tasks"),
+            ("calendar", f"/calendar?month={month}", "🗓 Calendar"),
+            ("history", "/history", "🗂 Saved reports"),
+        ]
+        name = user.get("name") or ""
+        who = f"Manager · {esc(name)}" if name else "Manager"
+        chip = f'<span class="role-chip manager" style="margin-left:auto">{who}</span>'
+        primary = ""
+    elif role == "worker":
+        links = [
+            ("me", "/me", "🏠 My day"),
+            ("tasks", "/tasks", "✅ My tasks"),
+            ("calendar", f"/calendar?month={month}", "🗓 Calendar"),
+        ]
+        who = esc(user.get("name") or user.get("team_name") or "Team")
+        chip = f'<span class="role-chip worker" style="margin-left:auto">Team · {who}</span>'
+        primary = f'<a class="primary" href="/submit?date={d}">📝 File my report</a>'
+    else:
+        return ""
     out = ['<nav class="topnav">']
     for key, href, label in links:
         cls = ' class="active"' if key == active else ""
         out.append(f'<a href="{href}"{cls}>{label}</a>')
-    out.append(f'<a class="primary" href="/submit?date={d}">📝 File my team\'s report</a>')
+    out.append(primary)
+    out.append(chip)
+    out.append('<a class="signout" href="/logout">Sign out</a>')
     out.append("</nav>")
     return "".join(out)
 
 
-def shell(title: str, active: str, day: str, body: str, extra_css: str = "") -> str:
+def shell(title: str, active: str, day: str, body: str, extra_css: str = "",
+          user: dict | None = None) -> str:
+    role = (user or {}).get("role", "")
+    body_cls = f' class="role-{esc(role)}"' if role else ""
     return f"""<!DOCTYPE html>
 <html lang="en"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{esc(title)} — MOOV</title>
 <style>{BASE_CSS}{extra_css}</style></head>
-<body><div class="wrap">
-{nav(active, day)}
+<body{body_cls}><div class="wrap">
+{nav(active, day, user)}
 {body}
 <footer>MOOV Health Check · zero-dependency daily operations website</footer>
 </div></body></html>"""
@@ -182,10 +236,27 @@ def _bars(counts: dict, labels: dict, colors: dict) -> str:
 # /tasks — the employee task list
 # ---------------------------------------------------------------------------
 
-def tasks_page(roster: dict, tasks: list, today: str,
+def visible_tasks(tasks: list, user: dict | None) -> list:
+    """Which tasks a user sees: managers see all; team members see their
+    team's tasks, tasks assigned to them by name, and unassigned tasks."""
+    if not user or user.get("role") == "manager":
+        return tasks
+    team_id = user.get("team_id", "")
+    name = (user.get("name") or "").strip().lower()
+    return [
+        t for t in tasks
+        if t.get("team_id") == team_id
+        or not t.get("team_id")
+        or (name and (t.get("assignee") or "").strip().lower() == name)
+    ]
+
+
+def tasks_page(roster: dict, tasks: list, today: str, user: dict | None = None,
                team_filter: str = "", status_filter: str = "",
                toast: str = "", error: str = "") -> str:
     team_names = {tid: info.get("team_name", tid) for tid, info in roster.items()}
+    can_manage = bool(user) and user.get("role") == "manager"
+    tasks = visible_tasks(tasks, user)
 
     all_tasks = sorted(
         tasks,
@@ -217,22 +288,28 @@ def tasks_page(roster: dict, tasks: list, today: str,
         cls = ' class="on"' if on else ""
         return f'<a href="{href}"{cls}>{esc(label)}</a>'
 
-    filters = ['<div class="filters"><span class="muted">Team:</span>',
-               filt_link("All", "", status_filter, on=not team_filter)]
-    for tid, name in team_names.items():
-        filters.append(filt_link(name, tid, status_filter, on=team_filter == tid))
-    filters.append('<span class="muted" style="margin-left:12px">Status:</span>')
+    filters = ['<div class="filters">']
+    if can_manage:
+        filters += ['<span class="muted">Team:</span>',
+                    filt_link("All", "", status_filter, on=not team_filter)]
+        for tid, name in team_names.items():
+            filters.append(filt_link(name, tid, status_filter, on=team_filter == tid))
+        filters.append('<span class="muted" style="margin-left:12px">Status:</span>')
+    else:
+        filters.append('<span class="muted">Status:</span>')
     filters.append(filt_link("All", team_filter, "", on=not status_filter))
     for key, label in tasks_mod.STATUSES.items():
         filters.append(filt_link(label, team_filter, key, on=status_filter == key))
     filters.append("</div>")
 
-    # Add-task form (the manager puts project names / deadlines).
-    team_opts = ['<option value="">— any team —</option>'] + [
-        f'<option value="{esc(tid)}">{esc(name)}</option>'
-        for tid, name in team_names.items()
-    ]
-    addform = f"""<div class="card"><h3>➕ Add a task <span class="muted">(project name, who, deadline)</span></h3>
+    # Add-task form — the manager puts project names / deadlines.
+    addform = ""
+    if can_manage:
+        team_opts = ['<option value="">— any team —</option>'] + [
+            f'<option value="{esc(tid)}">{esc(name)}</option>'
+            for tid, name in team_names.items()
+        ]
+        addform = f"""<div class="card"><h3>➕ Add a task <span class="muted">(project name, who, deadline)</span></h3>
 <form method="post" action="/tasks" class="addform">
   <input type="hidden" name="action" value="add">
   <div class="fld" style="flex:2;min-width:220px"><label>Task</label>
@@ -279,6 +356,14 @@ def tasks_page(roster: dict, tasks: list, today: str,
                         f'<input type="hidden" name="status" value="done">'
                         f'<input type="hidden" name="back" value="{esc(back)}">'
                         f'<button type="submit" title="Mark done">✓ Done</button></form>')
+        delete_form = ""
+        if can_manage:
+            delete_form = (f'<form method="post" action="/tasks" class="rowform" '
+                           f'onsubmit="return confirm(\'Delete this task?\')">'
+                           f'<input type="hidden" name="action" value="delete">'
+                           f'<input type="hidden" name="id" value="{tid}">'
+                           f'<input type="hidden" name="back" value="{esc(back)}">'
+                           f'<button type="submit" class="danger" title="Delete">✕</button></form>')
         rows.append(f"""<tr>
 <td><b>{esc(t.get('title', ''))}</b>{f'<div class="muted" style="font-size:12px">{esc(t["notes"])}</div>' if t.get('notes') else ''}</td>
 <td>{who}</td>
@@ -293,17 +378,13 @@ def tasks_page(roster: dict, tasks: list, today: str,
     <button type="submit" class="ghost">Save</button>
   </form>
   {done_btn}
-  <form method="post" action="/tasks" class="rowform"
-        onsubmit="return confirm('Delete this task?')">
-    <input type="hidden" name="action" value="delete">
-    <input type="hidden" name="id" value="{tid}">
-    <input type="hidden" name="back" value="{esc(back)}">
-    <button type="submit" class="danger" title="Delete">✕</button>
-  </form>
+  {delete_form}
 </div></td></tr>""")
 
     if not rows:
-        rows.append('<tr><td colspan="5" class="muted">No tasks here yet — add the first one above.</td></tr>')
+        empty = ("No tasks here yet — add the first one above." if can_manage
+                 else "No tasks assigned to your team yet. 🎉")
+        rows.append(f'<tr><td colspan="5" class="muted">{empty}</td></tr>')
 
     toast_html = ""
     if toast:
@@ -311,8 +392,14 @@ def tasks_page(roster: dict, tasks: list, today: str,
     if error:
         toast_html = f'<div class="toast error">⚠ {esc(error)}</div>'
 
-    body = f"""<h1>✅ Employee task list</h1>
-<div class="sub">The manager assigns the work and the deadline — the team updates the status and ticks it done.</div>
+    if can_manage:
+        title = "✅ Employee task list"
+        sub = "You assign the work and the deadline — the teams update the status and tick it done."
+    else:
+        title = f"✅ {esc((user or {}).get('team_name') or 'My')} tasks"
+        sub = "What your manager has assigned to you — update the status as you go and tick it done."
+    body = f"""<h1>{title}</h1>
+<div class="sub">{sub}</div>
 {toast_html}
 {summary}
 {addform}
@@ -322,7 +409,7 @@ def tasks_page(roster: dict, tasks: list, today: str,
 <thead><tr><th>Task</th><th>Assigned to</th><th>Status</th><th>Due date</th><th>Update</th></tr></thead>
 <tbody>{''.join(rows)}</tbody>
 </table></div>"""
-    return shell("Employee task list", "tasks", today, body)
+    return shell("Tasks", "tasks", today, body, user=user)
 
 
 # ---------------------------------------------------------------------------
@@ -349,8 +436,9 @@ def report_dates(reports_dir: str) -> dict:
 
 
 def calendar_page(roster: dict, tasks: list, reports_by_day: dict,
-                  month: str, today: str) -> str:
+                  month: str, today: str, user: dict | None = None) -> str:
     team_names = {tid: info.get("team_name", tid) for tid, info in roster.items()}
+    tasks = visible_tasks(tasks, user)
     year, mon = int(month[:4]), int(month[5:7])
     month_name = f"{calendar_mod.month_name[mon]} {year}"
 
@@ -383,20 +471,27 @@ def calendar_page(roster: dict, tasks: list, reports_by_day: dict,
                     f'title="{esc(tip)}">{esc(t.get("title", ""))}</a>'
                 )
             n_reports = reports_by_day.get(iso, 0)
-            rep = (f'<a class="rep" href="/sheet?date={iso}" title="{n_reports} team report(s) filed">'
-                   f'📋 {n_reports}</a>') if n_reports else ""
-            cells.append(
-                f'<td{cls}><a class="daynum" href="/sheet?date={iso}">{d.day}</a>'
-                f'{"".join(events)}{rep}</td>'
-            )
+            is_manager = (user or {}).get("role") != "worker"
+            if is_manager:
+                rep = (f'<a class="rep" href="/sheet?date={iso}" title="{n_reports} team report(s) filed">'
+                       f'📋 {n_reports}</a>') if n_reports else ""
+                daynum = f'<a class="daynum" href="/sheet?date={iso}">{d.day}</a>'
+            else:
+                rep = (f'<span class="rep" title="{n_reports} team report(s) filed">'
+                       f'📋 {n_reports}</span>') if n_reports else ""
+                daynum = f'<span class="daynum">{d.day}</span>'
+            cells.append(f'<td{cls}>{daynum}{"".join(events)}{rep}</td>')
         body_rows.append(f"<tr>{''.join(cells)}</tr>")
 
     legend = " ".join(
         f'<span class="chip" style="border-color:{c};color:{c}">{esc(tasks_mod.STATUSES[k])}</span>'
         for k, c in STATUS_COLORS.items()
     )
+    hint = ("Click a day to open its daily sheet."
+            if (user or {}).get("role") != "worker"
+            else "Your deadlines and the days your team reported.")
     body = f"""<h1>🗓 {esc(month_name)}</h1>
-<div class="sub">Task deadlines and filed daily reports, at a glance. Click a day to open its daily sheet.</div>
+<div class="sub">Task deadlines and filed daily reports, at a glance. {hint}</div>
 <div class="filters">
   <a href="/calendar?month={_month_shift(month, -1)}">← {_month_shift(month, -1)}</a>
   <a href="/calendar?month={esc(today[:7])}">Today</a>
@@ -406,7 +501,7 @@ def calendar_page(roster: dict, tasks: list, reports_by_day: dict,
 <div class="card" style="padding:8px">
 <table class="cal"><thead><tr>{head}</tr></thead><tbody>{''.join(body_rows)}</tbody></table>
 </div>"""
-    return shell(f"Calendar — {month_name}", "calendar", today, body)
+    return shell(f"Calendar — {month_name}", "calendar", today, body, user=user)
 
 
 # ---------------------------------------------------------------------------
@@ -452,7 +547,8 @@ _SHEET_CSS = """
 """
 
 
-def sheet_page(report, tasks: list, day: str, roster: dict) -> str:
+def sheet_page(report, tasks: list, day: str, roster: dict,
+               user: dict | None = None) -> str:
     team_names = {tid: info.get("team_name", tid) for tid, info in roster.items()}
     teams = report.teams
     reported = len(teams)
@@ -575,7 +671,8 @@ def sheet_page(report, tasks: list, day: str, roster: dict) -> str:
     {awaiting}
   </div>
 </div>"""
-    return shell(f"Daily sheet — {day}", "sheet", day, body, extra_css=_SHEET_CSS)
+    return shell(f"Daily sheet — {day}", "sheet", day, body, extra_css=_SHEET_CSS,
+                 user=user)
 
 
 def _shift(day: str, delta: int) -> str:
@@ -587,7 +684,8 @@ def _shift(day: str, delta: int) -> str:
 # ---------------------------------------------------------------------------
 
 def history_page(reports_by_day: dict, load_day, roster: dict, today: str,
-                 date_from: str = "", date_to: str = "") -> str:
+                 date_from: str = "", date_to: str = "",
+                 user: dict | None = None) -> str:
     """``load_day(date)`` -> list[TeamSnapshot] for that date (lazy loader)."""
     expected = len(roster)
     days = sorted(reports_by_day, reverse=True)
@@ -641,4 +739,182 @@ def history_page(reports_by_day: dict, load_day, roster: dict, today: str,
 <div class="card" style="padding:0 8px">
 <table><thead><tr><th>Date</th><th>Team</th><th>Notes (done · plan)</th></tr></thead>
 <tbody>{"".join(consolidated)}</tbody></table></div>"""
-    return shell("Saved reports", "history", today, body)
+    return shell("Saved reports", "history", today, body, user=user)
+
+
+# ---------------------------------------------------------------------------
+# /login — two doors: the manager's and the team member's
+# ---------------------------------------------------------------------------
+
+def login_page(roster: dict, error: str = "") -> str:
+    team_opts = ['<option value="">— choose your team —</option>'] + [
+        f'<option value="{esc(tid)}">{esc(info.get("team_name", tid))} '
+        f'({esc(info.get("region", ""))})</option>'
+        for tid, info in roster.items()
+    ]
+    error_html = f'<div class="toast error">⚠ {esc(error)}</div>' if error else ""
+    body = f"""<div class="login-hero">
+  <h1>🚦 MOOV daily reporting</h1>
+  <div class="sub">One website, two workspaces. Pick yours.</div>
+</div>
+{error_html}
+<div class="grid2" style="max-width:820px;margin:0 auto">
+  <div class="card login-card manager">
+    <h3>👔 I'm the operations manager</h3>
+    <div class="desc">See the live dashboard, assign tasks &amp; deadlines,
+      read every team's report, print the daily sheet.</div>
+    <form method="post" action="/login">
+      <input type="hidden" name="role" value="manager">
+      <input type="text" name="name" placeholder="Your name (optional)">
+      <button type="submit">Enter the manager workspace →</button>
+    </form>
+  </div>
+  <div class="card login-card worker">
+    <h3>🧑‍🔧 I'm a team member</h3>
+    <div class="desc">File your daily report, tick off your tasks,
+      and see how your team is doing today.</div>
+    <form method="post" action="/login">
+      <input type="hidden" name="role" value="worker">
+      <select name="team" required>{''.join(team_opts)}</select>
+      <input type="text" name="name" placeholder="Your name (optional)">
+      <button type="submit">Enter my workspace →</button>
+    </form>
+  </div>
+</div>
+<p class="muted" style="text-align:center;font-size:12px;margin-top:26px">
+No passwords — this site is meant for a trusted office network or VPN.</p>"""
+    return shell("Sign in", "", "", body)
+
+
+# ---------------------------------------------------------------------------
+# /me — the team member's home: report, performance, tasks, deadlines
+# ---------------------------------------------------------------------------
+
+_HEALTH_COLORS = {
+    Status.GREEN: "#1e9e5a",
+    Status.AMBER: "#d99513",
+    Status.RED: "#d64545",
+    Status.UNKNOWN: "#8a8f98",
+}
+_HEALTH_LABEL = {
+    Status.GREEN: "healthy",
+    Status.AMBER: "watch",
+    Status.RED: "at risk",
+    Status.UNKNOWN: "no data",
+}
+
+
+def me_page(user: dict, team_health, tasks: list, today: str,
+            submitted: bool = False) -> str:
+    """The worker's home. ``team_health`` is the team's TeamHealth if the
+    team has filed today's report, else None."""
+    name = user.get("name") or ""
+    team_name = user.get("team_name") or user.get("team_id") or "your team"
+    hello = f"Hello {esc(name)}" if name else f"Hello, {esc(team_name)}"
+
+    filed = team_health is not None
+    snap = team_health.snapshot if filed else None
+
+    # --- Card 1: today's report -----------------------------------------
+    if filed:
+        who = f" by {esc(snap.submitted_by)}" if snap.submitted_by else ""
+        when = f" at {esc(snap.submitted_at)}" if snap.submitted_at else ""
+        report_card = f"""<div class="card me-card ok">
+<h3>📝 Today's report — filed ✓</h3>
+<div class="sub" style="margin:0 0 8px">Sent to the manager{who}{when}.</div>
+<a href="/submit?date={esc(today)}&team={esc(user.get('team_id', ''))}">Review or correct it →</a>
+</div>"""
+    else:
+        report_card = f"""<div class="card me-card warn">
+<h3>📝 Today's report — not filed yet</h3>
+<div class="sub" style="margin:0 0 4px">Your manager is waiting on {esc(team_name)}.
+It takes about two minutes.</div>
+<a class="cta" href="/submit?date={esc(today)}">File today's report</a>
+</div>"""
+
+    # --- Card 2: performance after reporting ----------------------------
+    if filed:
+        color = _HEALTH_COLORS[team_health.status]
+        chips = "".join(
+            f'<span class="chip" style="border-color:{_HEALTH_COLORS[r.status]};'
+            f'color:{_HEALTH_COLORS[r.status]}">{esc(r.definition.label)} {esc(r.format_value())}</span>'
+            for r in team_health.readings if r.value is not None
+        ) or '<span class="muted">No numbers reported today.</span>'
+        perf_card = f"""<div class="card me-card" style="border-left-color:{color}">
+<h3>📈 {esc(team_name)} — today's performance</h3>
+<div class="bigscore" style="color:{color}">{team_health.score:g}<small>/100 · {_HEALTH_LABEL[team_health.status]}</small></div>
+<div class="metric-chips">{chips}</div>
+</div>"""
+    else:
+        perf_card = """<div class="card me-card">
+<h3>📈 Today's performance</h3>
+<div class="sub" style="margin:0">File your report and your team's daily
+performance dashboard appears here.</div>
+</div>"""
+
+    # --- Card 3: my tasks -------------------------------------------------
+    my_tasks = visible_tasks(tasks, user)
+    open_tasks = sorted(
+        (t for t in my_tasks if t.get("status") in tasks_mod.OPEN_STATUSES),
+        key=lambda t: t.get("due_date") or "9999-99-99",
+    )
+    done_today = [t for t in my_tasks
+                  if t.get("status") == "done" and t.get("completed_on") == today]
+    rows = []
+    for t in open_tasks:
+        tid = esc(t["id"])
+        bucket = tasks_mod.due_bucket(t, today)
+        due = esc(t.get("due_date") or "—")
+        if bucket == "overdue":
+            due = f'<span class="overdue-date">{due}</span>'
+        opts = "".join(
+            f'<option value="{k}"{" selected" if t.get("status") == k else ""}>{v}</option>'
+            for k, v in tasks_mod.STATUSES.items() if k != "canceled"
+        )
+        rows.append(f"""<tr>
+<td><b>{esc(t.get('title', ''))}</b></td>
+<td>{status_chip(t.get('status', 'todo'))}</td>
+<td>{due}</td>
+<td><div class="rowform">
+  <form method="post" action="/tasks" class="rowform">
+    <input type="hidden" name="action" value="status">
+    <input type="hidden" name="id" value="{tid}">
+    <input type="hidden" name="back" value="me">
+    <select name="status">{opts}</select>
+    <button type="submit" class="ghost">Save</button>
+  </form>
+  <form method="post" action="/tasks" class="rowform">
+    <input type="hidden" name="action" value="status">
+    <input type="hidden" name="id" value="{tid}">
+    <input type="hidden" name="status" value="done">
+    <input type="hidden" name="back" value="me">
+    <button type="submit">✓ Done</button>
+  </form>
+</div></td></tr>""")
+    if not rows:
+        rows.append('<tr><td colspan="4" class="muted">Nothing on your plate — '
+                    'no open tasks assigned to you. 🎉</td></tr>')
+    done_note = ""
+    if done_today:
+        done_note = (f'<div class="sub" style="margin:8px 0 0">🎉 Ticked off today: '
+                     + ", ".join(f"<b>{esc(t.get('title', ''))}</b>" for t in done_today)
+                     + "</div>")
+
+    toast_html = ('<div class="toast">✓ Report sent to your manager. '
+                  "Here's your day.</div>") if submitted else ""
+
+    body = f"""<h1>🏠 {hello} — {esc(today)}</h1>
+<div class="sub">Your day at a glance: report in, tasks ticked, performance up.</div>
+{toast_html}
+<div class="grid2">
+{report_card}
+{perf_card}
+</div>
+<h2>✅ My open tasks</h2>
+<div class="card" style="padding:0 8px">
+<table>
+<thead><tr><th>Task</th><th>Status</th><th>Due</th><th>Update</th></tr></thead>
+<tbody>{''.join(rows)}</tbody>
+</table></div>
+{done_note}"""
+    return shell("My day", "me", today, body, user=user)
