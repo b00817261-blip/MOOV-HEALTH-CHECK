@@ -297,6 +297,11 @@ def test_updates_assemble_the_report_with_link_and_friction(server):
         f"note_{id_upload}": "all 12 uploaded, 1 waiting on shipper",
     })
     assert "Updates sent" in body and "1 of 2 done" in body
+    # The employee gets their own recap of what they completed today.
+    assert "You completed" in body
+    assert "1 done · 1 in progress" in body
+    assert "Upload BLs for LIDL batch" in body
+    assert "all 12 uploaded, 1 waiting on shipper" in body
 
     _, dash = m.get("/")
     assert "Wei L." in dash and "1 done · 1 in progress" in dash

@@ -860,6 +860,38 @@ def me_page(user: dict, tasks: list, today: str, channels: list | None = None,
         toast = (f'<div class="toast">✓ Updates sent — {done_n} of {len(todays)} done. '
                  "Your boss sees them assemble into today's report.</div>")
 
+    # A recap of what this person has finished today — their own end of the
+    # report that assembles itself on the boss's dashboard.
+    recap = ""
+    if done_n:
+        prog_n = len(todays) - done_n
+        cnt = f"{done_n} done"
+        if prog_n:
+            cnt += f" · {prog_n} in progress"
+        lines = []
+        for t in todays:
+            if t.get("status") != "done":
+                continue
+            upd = tasks_mod.update_for_day(t, today) or {}
+            note = (f' <span class="note">— {esc(upd.get("note", ""))}</span>'
+                    if upd.get("note") else "")
+            chip = ""
+            if upd.get("channel"):
+                chip = (' <span class="rep-chip" style="border-color:#8ab4f8;'
+                        f'color:#8ab4f8">in {esc(upd["channel"])}</span>')
+            lines.append(
+                f'<div class="repline"><span style="color:#1e9e5a">✓</span> '
+                f'<b>{esc(t.get("title", ""))}</b>{note}{chip}</div>'
+            )
+        praise = ("Everything on your plate is done. 🎉" if not prog_n
+                  else "Nice progress — here's what you've wrapped up.")
+        recap = f"""<div class="card recap">
+<div class="rep-head"><span class="avatar" style="width:30px;height:30px;font-size:11px;background:#1e9e5a">{esc(_initials(name or team_name))}</span>
+<span class="who">You completed</span><span class="cnt">{esc(cnt)}</span></div>
+<div class="muted" style="font-size:13px;margin:2px 0 8px">{praise}</div>
+{''.join(lines)}
+</div>"""
+
     if todays:
         first_open = True
         cards = []
@@ -881,8 +913,9 @@ def me_page(user: dict, tasks: list, today: str, channels: list | None = None,
     body = f"""<h1>Today's tasks</h1>
 <div class="sub">{frm}{len(todays)} task(s) · update each one — takes about a minute, {hello}.</div>
 {toast}
+{recap}
 {form}"""
-    return shell("My day", "me", today, body, extra_css=_ME_CSS, user=user)
+    return shell("My day", "me", today, body, extra_css=_ME_CSS + _REPORT_CSS, user=user)
 
 
 # ---------------------------------------------------------------------------
