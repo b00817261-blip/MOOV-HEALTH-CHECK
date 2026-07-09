@@ -22,15 +22,23 @@ _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 esc = html.escape
 
-# Chip colours per task status — matched to the "Employee Task List" inspo
-# (In Progress = peach, Waiting = yellow, Canceled = purple, Done = green).
+# Chip colours per task status — soft, calm pills on the light theme.
 STATUS_COLORS = {
-    "todo": "#8ab4f8",
-    "doing": "#e8853d",
-    "waiting": "#d9b513",
+    "todo": "#5a6b7a",
+    "doing": "#2f74b5",
+    "waiting": "#b8892f",
     "done": "#1e9e5a",
-    "canceled": "#9a6fd1",
+    "canceled": "#8b6fc9",
 }
+
+# Small MOOV wordmark used on the sign-in badge.
+_MOOV_MARK = (
+    '<svg width="42" height="42" viewBox="0 0 44 44" fill="none" aria-hidden="true">'
+    '<path d="M22 3 L38 12 V32 L22 41 L6 32 V12 Z" stroke="#fff" stroke-width="2.4" fill="none"/>'
+    '<text x="22" y="25.5" text-anchor="middle" fill="#fff" font-size="8.5" '
+    'font-weight="800" font-family="-apple-system,Segoe UI,Roboto,sans-serif" '
+    'letter-spacing=".4">MOOV</text></svg>'
+)
 
 DUE_COLORS = {
     "complete": "#1e9e5a",
@@ -41,118 +49,109 @@ DUE_COLORS = {
 }
 
 BASE_CSS = """
-:root { color-scheme: light dark; }
+:root {
+  --bg: #eef1f4; --card: #ffffff; --line: #e4e9ee;
+  --ink: #14212c; --ink2: #33454f; --muted: #6f818c;
+  --navy: #103a5b; --navy-d: #0c2c46; --orange: #e8551f; --orange-d: #cf491a;
+  --green: #1e9e5a; --red: #d64545; color-scheme: light; }
 * { box-sizing: border-box; }
 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  margin: 0; background: #0f1115; color: #e6e8eb; line-height: 1.5; }
-.wrap { max-width: 1060px; margin: 0 auto; padding: 28px 20px 64px; }
-a { color: #8ab4f8; text-decoration: none; }
-h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: .3px; }
-h2 { font-size: 15px; text-transform: uppercase; letter-spacing: 1px; color: #8a8f98; margin: 28px 0 12px; }
-.sub { color: #8a8f98; font-size: 14px; margin-bottom: 18px; }
-.topnav { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 22px; font-size: 14px; }
-.topnav a { padding: 6px 12px; border: 1px solid #262a31; border-radius: 8px; background: #171a21; color: #c7ccd3; }
-.topnav a:hover { border-color: #8ab4f8; color: #e6e8eb; }
-.topnav a.active { border-color: #8ab4f8; color: #8ab4f8; font-weight: 600; }
-.topnav a.primary { background: #1e9e5a; border-color: #1e9e5a; color: #fff; font-weight: 600; margin-left: auto; }
-.card { background: #171a21; border: 1px solid #262a31; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
-.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  margin: 0; background: var(--bg); color: var(--ink2); line-height: 1.5; -webkit-font-smoothing: antialiased; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 22px 20px 72px; }
+a { color: var(--navy); text-decoration: none; }
+h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: -.4px; color: var(--ink); font-weight: 800; }
+h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin: 28px 0 12px; }
+.sub { color: var(--muted); font-size: 14px; margin-bottom: 18px; }
+.eyebrow { font-size: 12px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; color: var(--orange); }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+/* Top nav — clean white bar */
+.topnav { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin: 0 0 24px;
+  font-size: 14px; background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+  padding: 8px 12px; box-shadow: 0 1px 2px rgba(16,49,79,.05); }
+.topnav a { padding: 7px 12px; border-radius: 9px; color: var(--ink2); font-weight: 500; }
+.topnav a:hover { background: #f1f4f7; color: var(--ink); }
+.topnav a.active { color: var(--navy); font-weight: 700; background: #eaf0f6; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px;
+  margin-bottom: 16px; box-shadow: 0 1px 2px rgba(16,49,79,.05); }
+.grid2 { display: grid; grid-template-columns: 1.5fr 1fr; gap: 16px; }
 @media (max-width: 720px) { .grid2 { grid-template-columns: 1fr; } }
-.card h3 { margin: 0 0 12px; font-size: 14px; }
-.bar-row { display: grid; grid-template-columns: 110px 1fr 30px; align-items: center; gap: 10px; margin: 6px 0; font-size: 13px; }
-.bar-row .lbl { color: #b7bcc4; }
-.bar-track { background: #20242b; border-radius: 6px; height: 14px; overflow: hidden; }
-.bar-fill { height: 100%; border-radius: 6px; }
-.bar-row .cnt { text-align: right; font-variant-numeric: tabular-nums; color: #8a8f98; }
+.card h3 { margin: 0 0 12px; font-size: 15px; color: var(--ink); }
+.bar-row { display: grid; grid-template-columns: 110px 1fr 30px; align-items: center; gap: 12px; margin: 9px 0; font-size: 13px; }
+.bar-row .lbl { color: var(--ink2); }
+.bar-track { background: #eef1f4; border-radius: 8px; height: 12px; overflow: hidden; }
+.bar-fill { height: 100%; border-radius: 8px; }
+.bar-row .cnt { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink); font-weight: 700; }
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
-th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid #20242b; vertical-align: middle; }
-th { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: #6b7078; }
-.muted { color: #6b7078; }
-.chip { display: inline-block; border: 1px solid; border-radius: 20px; padding: 1px 10px; font-size: 12px; font-weight: 600; white-space: nowrap; }
-.overdue-date { color: #d64545; font-weight: 600; }
+th, td { text-align: left; padding: 13px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+tr:last-child td { border-bottom: 0; }
+th { font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); font-weight: 700; }
+.muted { color: var(--muted); }
+.chip { display: inline-block; border-radius: 20px; padding: 3px 11px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.overdue-date { color: var(--orange); font-weight: 700; }
 input[type=text], input[type=date], select {
-  padding: 8px 10px; border-radius: 8px; border: 1px solid #2c313a;
-  background: #0f1115; color: #e6e8eb; font-size: 14px; font-family: inherit; }
-input:focus, select:focus { outline: none; border-color: #8ab4f8; }
-button { padding: 8px 14px; font-size: 13px; font-weight: 700; color: #fff;
-  background: #1e9e5a; border: 0; border-radius: 8px; cursor: pointer; }
-button:hover { background: #23b568; }
-button.ghost { background: transparent; border: 1px solid #2c313a; color: #b7bcc4; font-weight: 500; }
-button.ghost:hover { border-color: #8ab4f8; color: #e6e8eb; }
-button.danger { background: transparent; border: 1px solid #2c313a; color: #d64545; font-weight: 500; }
-button.danger:hover { border-color: #d64545; }
-.toast { border-left: 4px solid #1e9e5a; background: rgba(30,158,90,.1);
-  border-radius: 8px; padding: 10px 14px; font-size: 14px; margin-bottom: 16px; }
-.toast.error { border-left-color: #d64545; background: rgba(214,69,69,.1); }
-.filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; font-size: 13px; }
-.filters a { padding: 4px 10px; border-radius: 20px; border: 1px solid #262a31; color: #b7bcc4; }
-.filters a.on { border-color: #8ab4f8; color: #8ab4f8; font-weight: 600; }
-.addform { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
-.addform .fld { display: flex; flex-direction: column; gap: 3px; }
-.addform label { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: #6b7078; }
+  padding: 9px 11px; border-radius: 10px; border: 1px solid #d5dce2;
+  background: #fff; color: var(--ink); font-size: 14px; font-family: inherit; }
+input::placeholder { color: #9aa8b1; }
+input:focus, select:focus { outline: none; border-color: var(--navy); box-shadow: 0 0 0 3px rgba(16,58,91,.1); }
+button { padding: 9px 16px; font-size: 13px; font-weight: 700; color: #fff;
+  background: var(--navy); border: 0; border-radius: 10px; cursor: pointer; }
+button:hover { background: var(--navy-d); }
+button.orange { background: var(--orange); }
+button.orange:hover { background: var(--orange-d); }
+button.ghost { background: #fff; border: 1px solid #d5dce2; color: var(--ink2); font-weight: 600; }
+button.ghost:hover { border-color: var(--navy); color: var(--navy); }
+button.danger { background: #fff; border: 1px solid #d5dce2; color: var(--red); font-weight: 600; }
+button.danger:hover { border-color: var(--red); }
+.toast { border-left: 4px solid var(--green); background: #eafaf1;
+  border-radius: 10px; padding: 11px 15px; font-size: 14px; margin-bottom: 16px; color: var(--ink); }
+.toast.error { border-left-color: var(--red); background: #fdecec; }
+.filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; font-size: 13px; }
+.filters a { padding: 6px 13px; border-radius: 20px; border: 1px solid var(--line); color: var(--ink2); background: #fff; }
+.filters a:hover { border-color: var(--navy); }
+.filters a.on { border-color: var(--navy); background: var(--navy); color: #fff; font-weight: 700; }
+.addform { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+.addform .fld { display: flex; flex-direction: column; gap: 4px; }
+.addform label { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); font-weight: 700; }
 .rowform { display: inline-flex; gap: 6px; align-items: center; }
 /* Calendar */
 .cal { width: 100%; table-layout: fixed; }
 .cal th { text-align: center; padding: 6px 4px; }
-.cal td { height: 96px; vertical-align: top; padding: 6px; border: 1px solid #20242b; }
-.cal .daynum { font-size: 12px; font-weight: 600; color: #8a8f98; display: inline-block; margin-bottom: 4px; }
-.cal td.today { outline: 2px solid #8ab4f8; outline-offset: -2px; border-radius: 4px; }
-.cal td.today .daynum { color: #8ab4f8; }
-.cal td.other { background: #12141a; }
+.cal td { height: 96px; vertical-align: top; padding: 6px; border: 1px solid var(--line); }
+.cal .daynum { font-size: 12px; font-weight: 700; color: var(--muted); display: inline-block; margin-bottom: 4px; }
+.cal td.today { outline: 2px solid var(--navy); outline-offset: -2px; border-radius: 4px; }
+.cal td.today .daynum { color: var(--navy); }
+.cal td.other { background: #f4f6f8; }
 .cal .ev { display: block; font-size: 11px; line-height: 1.3; border-left: 3px solid; border-radius: 3px;
-  background: #20242b; padding: 1px 5px; margin: 2px 0; white-space: nowrap; overflow: hidden;
-  text-overflow: ellipsis; color: #c7ccd3; }
-.cal .rep { display: inline-block; font-size: 11px; color: #1e9e5a; margin-top: 2px; }
-footer { margin-top: 36px; color: #6b7078; font-size: 12px; }
-/* Role identity — the manager and team-member workspaces look different */
+  background: #f1f4f7; padding: 1px 5px; margin: 2px 0; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; color: var(--ink2); }
+.cal .rep { display: inline-block; font-size: 11px; color: var(--green); margin-top: 2px; }
+footer { margin-top: 40px; color: var(--muted); font-size: 12px; text-align: center; }
+/* Role identity chip */
 .role-chip { font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
-  padding: 3px 10px; border-radius: 20px; font-weight: 700; white-space: nowrap; }
-.role-chip.manager { color: #5b9cf5; border: 1px solid #5b9cf5; background: rgba(91,156,245,.12); }
-.role-chip.worker { color: #2fae6e; border: 1px solid #2fae6e; background: rgba(47,174,110,.12); }
-body.role-manager .topnav a.active { border-color: #5b9cf5; color: #5b9cf5; }
-body.role-worker .topnav a.active { border-color: #2fae6e; color: #2fae6e; }
-body.role-manager .topnav { border-top: 3px solid #5b9cf5; padding-top: 10px; }
-body.role-worker .topnav { border-top: 3px solid #2fae6e; padding-top: 10px; }
-.signout { font-size: 12px; color: #6b7078 !important; border: 0 !important; background: none !important; }
+  padding: 4px 11px; border-radius: 20px; font-weight: 700; white-space: nowrap; }
+.role-chip.manager { color: var(--navy); border: 1px solid #cdddea; background: #eaf0f6; }
+.role-chip.worker { color: var(--green); border: 1px solid #bfe6d1; background: #eafaf1; }
+.signout { font-size: 12px; color: var(--muted) !important; font-weight: 500; }
+/* Brand mark */
+.brand { display: inline-flex; align-items: center; justify-content: center; width: 60px; height: 60px;
+  background: var(--navy); border-radius: 15px; color: #fff; box-shadow: 0 6px 16px rgba(16,49,79,.22); }
 /* Login */
-.login-hero { text-align: center; margin: 40px 0 30px; }
-.login-hero h1 { font-size: 30px; }
-.login-card { padding: 24px; }
-.login-card h3 { font-size: 17px; margin-bottom: 4px; }
-.login-card .desc { color: #8a8f98; font-size: 13px; margin-bottom: 16px; }
-.login-card form { display: flex; flex-direction: column; gap: 10px; }
-.login-card button { padding: 12px; font-size: 15px; }
-.login-card.manager { border-top: 4px solid #5b9cf5; }
-.login-card.manager button { background: #3d7fe0; }
-.login-card.manager button:hover { background: #5b9cf5; }
-.login-card.worker { border-top: 4px solid #2fae6e; }
-/* My day */
-.me-card { border-left: 4px solid #262a31; }
-.me-card.ok { border-left-color: #1e9e5a; }
-.me-card.warn { border-left-color: #d99513; }
-.bigscore { font-size: 34px; font-weight: 800; }
-.bigscore small { font-size: 14px; color: #8a8f98; font-weight: 400; }
-.metric-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-.cta { display: inline-block; padding: 12px 20px; background: #1e9e5a; color: #fff !important;
-  border-radius: 10px; font-weight: 700; margin-top: 8px; }
-.cta:hover { background: #23b568; }
-@media (prefers-color-scheme: light) {
-  body { background: #f6f7f9; color: #1a1d22; }
-  .card, .topnav a { background: #fff; border-color: #e3e6ea; }
-  .topnav a { color: #3a3f47; }
-  .topnav a.primary { background: #1e9e5a; color: #fff; border-color: #1e9e5a; }
-  a { color: #1a56db; }
-  th, td { border-color: #eceef1; }
-  .cal td { border-color: #e3e6ea; }
-  .cal td.other { background: #f0f2f5; }
-  .cal .ev { background: #f0f2f5; color: #3a3f47; }
-  .bar-track { background: #e7eaee; }
-  .bar-row .lbl { color: #5a6068; }
-  input[type=text], input[type=date], select { background: #fff; color: #1a1d22; border-color: #d4d9df; }
-  .filters a { border-color: #e3e6ea; color: #5a6068; background: #fff; }
-  button.ghost, button.danger { border-color: #d4d9df; background: #fff; }
-  button.ghost { color: #3a3f47; }
-}
+.login-hero { text-align: center; margin: 46px 0 8px; }
+.login-hero h1 { font-size: 34px; letter-spacing: -.6px; }
+.login-hero h1 .m { color: var(--navy); }
+.login-rule { width: 96px; height: 3px; margin: 16px auto 30px; border-radius: 3px;
+  background: linear-gradient(90deg, var(--navy), var(--orange)); }
+.login-card { padding: 26px; }
+.login-card h3 { font-size: 18px; margin-bottom: 6px; color: var(--ink); }
+.login-card .desc { color: var(--muted); font-size: 13px; margin-bottom: 18px; }
+.login-card form { display: flex; flex-direction: column; gap: 11px; }
+.login-card button { padding: 13px; font-size: 15px; }
+.login-card.manager { border-top: 4px solid var(--navy); }
+.login-card.worker { border-top: 4px solid var(--orange); }
+.cta { display: inline-block; padding: 12px 20px; background: var(--navy); color: #fff !important;
+  border-radius: 11px; font-weight: 700; margin-top: 8px; }
+.cta:hover { background: var(--navy-d); }
 """
 
 
@@ -220,8 +219,8 @@ def shell(title: str, active: str, day: str, body: str, extra_css: str = "",
 def status_chip(status: str) -> str:
     color = STATUS_COLORS.get(status, "#8a8f98")
     label = tasks_mod.STATUSES.get(status, status)
-    return (f'<span class="chip" style="border-color:{color};color:{color};'
-            f'background:{color}22">{esc(label)}</span>')
+    return (f'<span class="chip" style="color:{color};'
+            f'background:{color}1f">{esc(label)}</span>')
 
 
 def _bars(counts: dict, labels: dict, colors: dict) -> str:
@@ -285,11 +284,12 @@ def tasks_page(roster: dict, tasks: list, today: str, user: dict | None = None,
         and (not status_filter or t.get("status") == status_filter)
     ]
 
-    # Summary bars over ALL tasks (Trello-inspo: per list & per due date).
+    # Summary bars over ALL tasks (per status = uniform navy; per due = colour-coded).
     scounts = tasks_mod.status_counts(all_tasks)
     dcounts = tasks_mod.due_counts(all_tasks, today)
-    summary = f"""<div class="grid2">
-<div class="card"><h3>Tasks per status</h3>{_bars(scounts, tasks_mod.STATUSES, STATUS_COLORS)}</div>
+    navy_bars = {k: "#103a5b" for k in tasks_mod.STATUSES}
+    summary = f"""<div class="grid2" style="grid-template-columns:1fr 1fr">
+<div class="card"><h3>Tasks per status</h3>{_bars(scounts, tasks_mod.STATUSES, navy_bars)}</div>
 <div class="card"><h3>Tasks per due date</h3>{_bars(dcounts, tasks_mod.DUE_BUCKETS, DUE_COLORS)}</div>
 </div>"""
 
@@ -453,16 +453,22 @@ def tasks_page(roster: dict, tasks: list, today: str, user: dict | None = None,
         toast_html = f'<div class="toast error">⚠ {esc(error)}</div>'
 
     if can_manage:
-        title = "✅ Task board"
+        eyebrow = "Task board"
+        title = "Task board"
         sub = ("You assign the work and the deadline — each group updates its own "
                "status and ticks it done. Watch it move from here.")
         last_col = "Manage"
     else:
-        title = f"✅ {esc((user or {}).get('team_name') or 'My')} tasks"
+        eyebrow = "My tasks"
+        title = f"{esc((user or {}).get('team_name') or 'My')} tasks"
         sub = "What your manager has assigned to you — update the status as you go and tick it done."
         last_col = "Update"
-    body = f"""<h1>{title}</h1>
-<div class="sub">{sub}</div>
+    board_rule = ('<div style="width:70px;height:3px;border-radius:3px;margin:14px 0 22px;'
+                  'background:linear-gradient(90deg,var(--navy),var(--orange))"></div>')
+    body = f"""<div class="eyebrow">{eyebrow}</div>
+<h1 style="margin-top:2px">{title}</h1>
+<div class="sub" style="margin-bottom:0">{sub}</div>
+{board_rule}
 {toast_html}
 {summary}
 {addform}
@@ -626,9 +632,9 @@ def history_page(tasks: list, roster: dict, today: str,
                 f'<td>{esc(group)}</td>'
                 f'<td>{icon} <b>{esc(t.get("title", ""))}</b>{note}{fr}</td></tr>'
             )
-        friction_note = (f' · <span style="color:#d99513">{friction_n} friction flag(s)</span>'
+        friction_note = (f' · <span style="color:var(--orange)">{friction_n} friction flag(s)</span>'
                          if friction_n else "")
-        cards.append(f"""<div style="padding:8px 2px;border-bottom:1px solid #20242b">
+        cards.append(f"""<div style="padding:10px 2px;border-bottom:1px solid var(--line)">
 <b><a href="/?date={d}">{d}</a></b>
 <span class="muted"> — {by_day[d]} update(s) · {done_n} done{friction_note}</span>
 <span style="float:right"><a href="/?date={d}">dashboard</a></span>
@@ -665,13 +671,16 @@ def login_page(head_exists: bool, error: str = "") -> str:
                  if not head_exists else
                  "You're already set up — sign in to pick up where you left off.")
     body = f"""<div class="login-hero">
-  <h1>🚦 MOOV daily reporting</h1>
-  <div class="sub">Assign work, update it, and the report writes itself.</div>
+  <div class="brand">{_MOOV_MARK}</div>
+  <div class="eyebrow" style="margin-top:18px">Daily reporting</div>
+  <h1><span class="m">MOOV</span> daily reporting</h1>
+  <div class="sub" style="margin-bottom:0">Assign work, update it, and the report writes itself.</div>
+  <div class="login-rule"></div>
 </div>
 {error_html}
-<div class="grid2" style="max-width:820px;margin:0 auto">
+<div class="grid2" style="max-width:860px;margin:0 auto;grid-template-columns:1fr 1fr">
   <div class="card login-card manager">
-    <h3>👑 I'm the head of the desk</h3>
+    <h3>I'm the head of the desk</h3>
     <div class="desc">{head_line} You'll see everything, create groups,
       and invite your group leaders with a link.</div>
     <form method="post" action="/login">
@@ -680,12 +689,12 @@ def login_page(head_exists: bool, error: str = "") -> str:
     </form>
   </div>
   <div class="card login-card worker">
-    <h3>🔗 I have an invite link</h3>
+    <h3>I have an invite link</h3>
     <div class="desc">Your boss shared a link to join their group. Open it, or
       paste it here — you'll confirm your name and you're in.</div>
     <form method="get" action="/join">
       <input type="text" name="link" placeholder="Paste your invite link" required>
-      <button type="submit">Continue →</button>
+      <button type="submit" class="orange">Continue →</button>
     </form>
   </div>
 </div>
@@ -758,33 +767,29 @@ and the paste-a-link field is the same slot it will fill.</div></div>"""
 # ---------------------------------------------------------------------------
 
 _ME_CSS = """
-.tcard { border: 1px solid #262a31; border-radius: 12px; background: #171a21;
-  margin-bottom: 10px; overflow: hidden; }
+.tcard { border: 1px solid var(--line); border-radius: 14px; background: #fff;
+  margin-bottom: 10px; overflow: hidden; box-shadow: 0 1px 2px rgba(16,49,79,.05); }
 .tcard summary { list-style: none; cursor: pointer; display: flex; align-items: center;
-  gap: 10px; padding: 12px 14px; font-weight: 600; }
+  gap: 10px; padding: 13px 15px; font-weight: 700; color: var(--ink); }
 .tcard summary::-webkit-details-marker { display: none; }
-.tcard summary .chev { margin-left: auto; color: #6b7078; transition: transform .15s; }
+.tcard summary .chev { margin-left: auto; color: var(--muted); transition: transform .15s; }
 .tcard[open] summary .chev { transform: rotate(180deg); }
-.tcard[open] { border-color: #3d4450; }
-.tbody { padding: 2px 14px 14px; }
-.tbody .q { font-size: 12px; color: #8a8f98; margin: 12px 0 6px; }
+.tcard[open] { border-color: #cdd6de; }
+.tbody { padding: 2px 15px 15px; }
+.tbody .q { font-size: 12px; color: var(--muted); margin: 12px 0 6px; font-weight: 600; }
 .optrow input { position: absolute; opacity: 0; pointer-events: none; }
 .optchip { display: inline-block; padding: 7px 14px; margin: 0 6px 6px 0; cursor: pointer;
-  border: 1px solid #2c313a; border-radius: 9px; font-size: 13px; color: #b7bcc4; }
-.optchip:hover { border-color: #8ab4f8; }
-input:checked + .optchip { border-color: #8ab4f8; color: #8ab4f8; background: rgba(138,180,248,.1); }
-input:checked + .optchip.good { border-color: #1e9e5a; color: #1e9e5a; background: rgba(30,158,90,.15); }
-input:checked + .optchip.warn { border-color: #d99513; color: #d99513; background: rgba(217,149,19,.15); }
-input:focus-visible + .optchip { outline: 2px solid #8ab4f8; outline-offset: 1px; }
+  border: 1px solid #d5dce2; border-radius: 9px; font-size: 13px; color: var(--ink2); background: #fff; }
+.optchip:hover { border-color: var(--navy); }
+input:checked + .optchip { border-color: var(--navy); color: var(--navy); background: #eaf0f6; }
+input:checked + .optchip.good { border-color: var(--green); color: var(--green); background: #eafaf1; }
+input:checked + .optchip.warn { border-color: var(--orange); color: var(--orange); background: #fdefe8; }
+input:focus-visible + .optchip { outline: 2px solid var(--navy); outline-offset: 1px; }
 .tbody input[type=text] { width: 100%; }
 .fr-detail { display: none; margin-top: 4px; }
 input.fr-yes:checked ~ .fr-detail { display: block; }
 .submitbar { position: sticky; bottom: 12px; margin-top: 16px; }
 .submitbar button { width: 100%; padding: 14px; font-size: 15px; border-radius: 11px; }
-@media (prefers-color-scheme: light) {
-  .tcard { background: #fff; border-color: #e3e6ea; }
-  .optchip { border-color: #d4d9df; color: #5a6068; background: #fff; }
-}
 """
 
 
@@ -947,60 +952,113 @@ def me_page(user: dict, tasks: list, today: str, channels: list | None = None,
 # ---------------------------------------------------------------------------
 
 _DASH_CSS = """
-.pill { margin-left: auto; background: rgba(217,149,19,.15); border: 1px solid #d99513;
-  color: #d99513; border-radius: 20px; padding: 5px 14px; font-size: 13px; font-weight: 700; }
-.pill.good { background: rgba(30,158,90,.15); border-color: #1e9e5a; color: #1e9e5a; }
-.tiles4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px; }
-.stat { background: #171a21; border: 1px solid #262a31; border-radius: 12px; padding: 14px 16px; }
-.stat .k { font-size: 12px; color: #8a8f98; }
-.stat .v { font-size: 30px; font-weight: 800; line-height: 1.2; font-variant-numeric: tabular-nums; }
-.stat .s { font-size: 12px; color: #8a8f98; }
-.roster-row { display: grid; grid-template-columns: 44px minmax(140px, 1.2fr) 2fr auto;
-  gap: 14px; align-items: center; padding: 12px 6px; border-bottom: 1px solid #20242b; }
-.roster-row:last-child { border-bottom: 0; }
+.dtop { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-bottom: 16px; flex-wrap: wrap; }
+.dtoggle { display: flex; gap: 0; background: #fff; border: 1px solid var(--line);
+  border-radius: 11px; padding: 3px; }
+.dtoggle a { padding: 7px 16px; border-radius: 8px; font-size: 13px; font-weight: 700; color: var(--muted); }
+.dtoggle a.on { background: var(--navy); color: #fff; }
+.dright { display: flex; align-items: center; gap: 10px; }
+.live { font-size: 13px; color: var(--muted); font-weight: 600; }
+.live .ldot { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--green); margin-right: 6px; vertical-align: middle; }
+.kebab { border: 1px solid var(--line); background: #fff; color: var(--muted); border-radius: 9px;
+  padding: 5px 11px; font-weight: 800; letter-spacing: 1px; line-height: 1; }
+.hero { background: #e8edf1; display: flex; gap: 20px; align-items: center;
+  justify-content: space-between; padding: 26px 28px; }
+.hero-l { min-width: 0; }
+.hero .greet { font-size: 14px; color: var(--muted); font-weight: 600; margin-bottom: 6px; }
+.hero .head { font-size: 30px; line-height: 1.14; letter-spacing: -.6px; color: var(--ink);
+  margin: 0 0 8px; font-weight: 800; }
+.hero .subline { font-size: 14px; color: var(--muted); margin-bottom: 18px; }
+.hero-btns { display: flex; gap: 10px; flex-wrap: wrap; }
+.hbtn { display: inline-block; padding: 11px 18px; border-radius: 11px; font-weight: 700; font-size: 14px; }
+.hbtn.navy { background: var(--navy); color: #fff; }
+.hbtn.navy:hover { background: var(--navy-d); }
+.hbtn.ghost { background: #fff; border: 1px solid #d5dce2; color: var(--ink2); }
+.donut { width: 130px; height: 130px; flex: none; }
+.donut-v { font-size: 26px; font-weight: 800; fill: var(--ink); }
+.donut-k { font-size: 12px; fill: var(--muted); }
+.statstrip { display: grid; grid-template-columns: repeat(4, 1fr); padding: 4px 0; }
+.statstrip > div { text-align: center; padding: 14px 8px; border-right: 1px solid var(--line);
+  font-size: 14px; color: var(--muted); }
+.statstrip > div:last-child { border-right: 0; }
+.statstrip b { font-size: 17px; font-weight: 800; margin-right: 5px; color: var(--ink); }
+.c-green { color: var(--green) !important; } .c-orange { color: var(--orange) !important; }
+.c-navy { color: var(--navy) !important; }
+.att-head { display: flex; align-items: center; gap: 9px; font-size: 16px; font-weight: 800;
+  color: var(--ink); margin-bottom: 6px; }
+.att-head .adot { width: 9px; height: 9px; border-radius: 50%; background: var(--orange); }
+.att-count { margin-left: auto; font-size: 13px; font-weight: 500; color: var(--muted); }
+.att-row { display: flex; align-items: center; gap: 14px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.att-row:last-child { border-bottom: 0; }
+.att-row .abody { min-width: 0; flex: 1; }
+.att-row .t { font-weight: 700; color: var(--ink); }
+.att-row .m { font-size: 13px; color: var(--muted); margin-top: 2px; }
+.att-row .m .od { color: var(--orange); font-weight: 700; }
+.att-actions { display: flex; gap: 8px; flex: none; }
+.att-actions .hbtn { padding: 8px 13px; font-size: 13px; }
 .avatar { width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center;
-  justify-content: center; font-weight: 800; font-size: 13px; color: #fff; }
-.roster-name { font-weight: 700; }
-.roster-sub { font-size: 12px; color: #8a8f98; }
-.roster-sub .bad { color: #d64545; font-weight: 600; }
-.roster-sub .warn { color: #d99513; font-weight: 600; }
-.ptrack { background: #20242b; border-radius: 6px; height: 10px; overflow: hidden; }
-.pfill { height: 100%; border-radius: 6px; }
-.roster-count { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.worklist { list-style: none; margin: 0; padding: 0; }
-.worklist li { display: flex; gap: 10px; align-items: baseline; padding: 8px 2px;
-  border-bottom: 1px solid #20242b; font-size: 14px; }
-.worklist li:last-child { border-bottom: 0; }
-.wdot { width: 9px; height: 9px; border-radius: 50%; flex: none; position: relative; top: -1px; }
-.wmeta { color: #8a8f98; font-size: 12px; margin-left: auto; white-space: nowrap; }
+  justify-content: center; font-weight: 800; font-size: 13px; color: #fff; flex: none; }
+.avatar.soft { background: #fbe0d3; color: #c2521f; }
+.avatar.gray { background: #e7ebee; color: #7a8893; }
+.eyebrow2 { font-size: 12px; font-weight: 800; letter-spacing: 1px; color: var(--muted);
+  text-transform: uppercase; margin: 22px 2px 12px; }
+.groupgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 8px; }
+.gcard { display: block; background: #fff; border: 1px solid var(--line); border-radius: 14px;
+  padding: 16px 16px 15px; box-shadow: 0 1px 2px rgba(16,49,79,.05); }
+.gcard:hover { border-color: #cdd6de; box-shadow: 0 4px 14px rgba(16,49,79,.08); }
+.gc-top { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.gc-dot { width: 11px; height: 11px; border-radius: 3px; flex: none; }
+.gc-name { font-weight: 800; color: var(--ink); }
+.gc-chev { margin-left: auto; color: #b7c2cb; font-size: 18px; }
+.gc-num { font-size: 14px; color: var(--muted); margin-bottom: 10px; }
+.gc-num b { font-size: 26px; font-weight: 800; color: var(--ink); margin-right: 2px; }
+.ptrack { background: #eef1f4; border-radius: 8px; height: 8px; overflow: hidden; }
+.pfill { height: 100%; border-radius: 8px; }
+.gc-sub { font-size: 13px; margin-top: 9px; font-weight: 600; }
 .checklist { list-style: none; margin: 0; padding: 0; }
-.checklist li { display: flex; gap: 10px; align-items: center; padding: 9px 2px;
-  border-bottom: 1px solid #20242b; font-size: 14px; }
+.checklist li { display: flex; gap: 10px; align-items: center; padding: 11px 2px;
+  border-bottom: 1px solid var(--line); font-size: 14px; color: var(--ink2); }
 .checklist li:last-child { border-bottom: 0; }
-.checklist .pct { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
-@media (prefers-color-scheme: light) {
-  .stat { background: #fff; border-color: #e3e6ea; }
-  .roster-row, .worklist li, .checklist li { border-color: #eceef1; }
-  .ptrack { background: #e7eaee; }
-}
-@media (max-width: 640px) { .roster-row { grid-template-columns: 44px 1fr auto; }
-  .roster-row .ptrack { display: none; } }
+.checklist .pct { margin-left: auto; font-weight: 800; font-variant-numeric: tabular-nums; }
+@media (max-width: 820px) { .groupgrid { grid-template-columns: repeat(2, 1fr); }
+  .statstrip { grid-template-columns: repeat(2, 1fr); }
+  .statstrip > div:nth-child(2) { border-right: 0; }
+  .hero { flex-direction: column; align-items: flex-start; } }
+@media (max-width: 560px) { .groupgrid { grid-template-columns: 1fr; } }
 """
 
-_LEVEL_COLOR = {0: "#1e9e5a", 1: "#d99513", 2: "#d64545"}
+_LEVEL_COLOR = {0: "#1e9e5a", 1: "#e8551f", 2: "#d64545"}
+_GROUP_DOTS = ["#103a5b", "#e8551f", "#3d9bd6", "#1e9e5a", "#8a97a3", "#8b6fc9"]
 
 _REPORT_CSS = """
-.rep-head { display: flex; align-items: center; gap: 10px; margin: 16px 0 4px; }
-.rep-head:first-child { margin-top: 4px; }
-.rep-head .who { font-weight: 700; }
-.rep-head .cnt { color: #8a8f98; font-size: 12px; }
-.repline { padding: 7px 2px; border-bottom: 1px solid #20242b; font-size: 14px; }
+.rep-head { display: flex; align-items: center; gap: 10px; margin: 18px 0 6px; }
+.rep-head:first-child { margin-top: 2px; }
+.rep-head .who { font-weight: 700; color: var(--ink); }
+.rep-head .cnt { color: var(--muted); font-size: 12px; }
+.repline { padding: 9px 2px; border-bottom: 1px solid var(--line); font-size: 14px; color: var(--ink2); }
 .repline:last-child { border-bottom: 0; }
-.repline .note { color: #9aa0a8; }
+.repline b { color: var(--ink); }
+.repline .note { color: var(--muted); }
 .rep-chip { display: inline-block; border: 1px solid; border-radius: 20px;
-  padding: 0 8px; font-size: 11px; font-weight: 600; white-space: nowrap; margin-left: 4px; }
-@media (prefers-color-scheme: light) { .repline { border-color: #eceef1; } }
+  padding: 1px 9px; font-size: 11px; font-weight: 600; white-space: nowrap; margin-left: 5px; }
 """
+
+def _donut(pct: int) -> str:
+    r = 54
+    circ = 2 * 3.14159265 * r
+    dash = circ * max(0, min(100, pct)) / 100
+    return (
+        f'<svg viewBox="0 0 130 130" class="donut" role="img" aria-label="{pct}% done">'
+        f'<circle cx="65" cy="65" r="{r}" fill="none" stroke="#d9e1e8" stroke-width="12"/>'
+        f'<circle cx="65" cy="65" r="{r}" fill="none" stroke="#103a5b" stroke-width="12" '
+        f'stroke-linecap="round" stroke-dasharray="{dash:.1f} {circ:.1f}" '
+        f'transform="rotate(-90 65 65)"/>'
+        f'<text x="65" y="63" text-anchor="middle" class="donut-v">{pct}%</text>'
+        f'<text x="65" y="82" text-anchor="middle" class="donut-k">done</text>'
+        f'</svg>'
+    )
 
 
 def group_report_cards(group_reports: list, silent: list) -> str:
@@ -1085,7 +1143,7 @@ def _requests_card(requests: list) -> str:
                     f'<button type="submit"{cls}>{label}</button></form>')
 
         items.append(
-            f'<li style="padding:11px 0;border-bottom:1px solid #262a31">'
+            f'<li style="padding:12px 0;border-bottom:1px solid var(--line)">'
             f'<div><b>{esc(r["by"]) or "Someone"}</b> {ask} on '
             f'<b>{esc(r["title"])}</b> <span class="muted">· {esc(r["group"])}</span>'
             f'{reason}</div>{note}'
@@ -1093,7 +1151,7 @@ def _requests_card(requests: list) -> str:
             f'{button("approve", approve)}'
             f'{button("decline", "Decline", cls=" class=ghost")}</div></li>'
         )
-    return (f'<div class="card" style="border-left:4px solid #d99513">'
+    return (f'<div class="card" style="border-left:4px solid var(--orange)">'
             f'<h3>⏳ Requests to review '
             f'<span class="muted">· {len(requests)} pending</span></h3>'
             f'<ul style="list-style:none;margin:0;padding:0">{"".join(items)}</ul></div>')
@@ -1117,9 +1175,7 @@ def completion_dashboard(stats: dict, day: str, user: dict | None = None,
         return shell("Dashboard", "dashboard", day, body, extra_css=_DASH_CSS, user=user)
 
     pct = stats["pct"]
-    pill_cls = "pill good" if (pct >= 80 and stats["on_track"] == g_total) else "pill"
-    pill = (f'<span class="{pill_cls}">{pct}% complete · '
-            f'{stats["on_track"]} of {g_total} on track</span>')
+    on_track, worst = stats["on_track"], stats.get("worst")
 
     toast_html = ""
     if submitted:
@@ -1129,60 +1185,89 @@ def completion_dashboard(stats: dict, day: str, user: dict | None = None,
     if error:
         toast_html += f'<div class="toast error">⚠ {esc(error)}</div>'
 
-    tiles_html = f"""<div class="tiles4">
-<div class="stat"><div class="k">Tasks completed</div>
-  <div class="v" style="color:#1e9e5a">{tiles['done']}</div>
-  <div class="s">of {tiles['total']} on the board</div></div>
-<div class="stat"><div class="k">Still pending</div>
-  <div class="v" style="color:#d99513">{tiles['pending']}</div>
-  <div class="s">within deadline</div></div>
-<div class="stat"><div class="k">Overdue</div>
-  <div class="v" style="color:#d64545">{tiles['overdue']}</div>
-  <div class="s">past deadline</div></div>
-<div class="stat"><div class="k">Blocked</div>
-  <div class="v">{tiles['blocked']}</div>
-  <div class="s">waiting on someone</div></div>
+    # Hero headline — call out the group most in need of attention.
+    nudge_btn = ""
+    if worst and tiles["overdue"]:
+        unit = "needs" if tiles["overdue"] == 1 else "need"
+        headline = (f'{esc(worst["name"])} is behind — {tiles["overdue"]} {unit} '
+                    f'action. Start there.')
+    elif worst:
+        headline = f'{esc(worst["name"])} hasn’t checked in yet. Start there.'
+    else:
+        headline = 'Every group is on track. Nice and quiet — keep it rolling.'
+    if worst:
+        nudge_btn = (f'<a class="hbtn navy" href="/tasks?team={esc(worst["id"])}">'
+                     f'Nudge {esc(worst["name"])} group ↗</a>')
+
+    hero = f"""<div class="card hero">
+  <div class="hero-l">
+    <div class="greet">{esc(stats['greeting'])}, {esc((user or {}).get('name') or 'there')}</div>
+    <div class="head">{headline}</div>
+    <div class="subline">{on_track} of {g_total} groups on track · updated {esc(stats['generated_at'])}</div>
+    <div class="hero-btns">{nudge_btn}
+      <a class="hbtn ghost" href="/tasks">View all overdue</a></div>
+  </div>
+  {_donut(pct)}
 </div>"""
 
-    rows = []
-    for r in stats["rows"]:
-        color = _LEVEL_COLOR[r["level"]]
-        frac = round(100 * r["done"] / r["total"]) if r["total"] else 0
-        sub_bits = []
-        if r["overdue"]:
-            cls = "bad" if r["level"] == 2 else "warn"
-            sub_bits.append(f'<span class="{cls}">{r["overdue"]} overdue</span>')
-        if not r["filed"]:
-            sub_bits.append('<span class="warn">no updates yet</span>')
-        if r["last"]:
-            sub_bits.append(f'last activity {esc(r["last"])}')
-        elif not r["filed"]:
-            sub_bits.append('<span class="bad">no activity today</span>')
-        lead = f' · {esc(r["lead"])}' if r["lead"] else ""
-        rows.append(f"""<div class="roster-row">
-<span class="avatar" style="background:{color}">{esc(_initials(r['name']))}</span>
-<div><div class="roster-name">{esc(r['name'])}<span class="muted" style="font-weight:400">{lead}</span></div>
-  <div class="roster-sub">{' · '.join(sub_bits) or 'all clear'}</div></div>
-<div class="ptrack"><div class="pfill" style="width:{frac}%;background:{color}"></div></div>
-<span class="roster-count" style="color:{color}">{r['done']}/{r['total']} done</span>
-</div>""")
+    statstrip = f"""<div class="card statstrip">
+  <div><b class="c-green">{tiles['done']}</b> completed</div>
+  <div><b>{tiles['pending']}</b> pending</div>
+  <div><b class="c-orange">{tiles['overdue']}</b> overdue</div>
+  <div><b class="c-navy">{tiles['blocked']}</b> blocked</div>
+</div>"""
 
-    outstanding = []
-    for o in stats["outstanding"]:
-        color = _LEVEL_COLOR[o["level"]]
-        outstanding.append(
-            f'<li><span class="wdot" style="background:{color}"></span>'
-            f'<span><b>{esc(o["title"])}</b> <span class="muted">· {esc(o["group"])}</span></span>'
-            f'<span class="wmeta" style="color:{color}">{esc(o["note"])}</span></li>'
-        )
-    outstanding_html = "".join(outstanding) or '<li class="muted">Nothing outstanding. 🎉</li>'
+    # Needs attention now — the actionable overdue/blocked list.
+    att_rows = []
+    for a in stats.get("attention", []):
+        av_cls = "soft" if a["level"] == 2 else "gray"
+        who = a["group"] if a["unassigned"] else a["person"]
+        act_href = f'/tasks?team={esc(a["team_id"])}'
+        act_label = "Assign ↗" if a["unassigned"] else "Open ↗"
+        att_rows.append(f"""<div class="att-row">
+  <span class="avatar {av_cls}">{esc(_initials(who))}</span>
+  <div class="abody"><div class="t">{esc(a['title'])}</div>
+    <div class="m"><span class="od">{esc(a['status_text'])}</span> · {esc(a['person'])} · {esc(a['group'])}</div></div>
+  <div class="att-actions"><a class="hbtn ghost" href="{act_href}">{act_label}</a></div>
+</div>""")
+    if att_rows:
+        attention_card = (f'<div class="card"><div class="att-head"><span class="adot"></span>'
+                          f'Needs attention now<span class="att-count">{len(att_rows)} items</span></div>'
+                          f'{"".join(att_rows)}</div>')
+    else:
+        attention_card = ('<div class="card"><div class="att-head"><span class="adot" '
+                          'style="background:var(--green)"></span>Needs attention now'
+                          '<span class="att-count">all clear</span></div>'
+                          '<div class="muted" style="padding:8px 0">Nothing overdue or blocked. 🎉</div></div>')
+
+    # Group cards.
+    gcards = []
+    for i, r in enumerate(stats["rows"]):
+        dot = _GROUP_DOTS[i % len(_GROUP_DOTS)]
+        frac = round(100 * r["done"] / r["total"]) if r["total"] else 0
+        bar = "#1e9e5a" if r["level"] == 0 else "#e8551f"
+        if r["overdue"]:
+            sub = f'<span style="color:#e8551f">{r["overdue"]} overdue</span>'
+        elif not r["filed"]:
+            sub = '<span class="muted">no updates yet</span>'
+        elif r["soon"]:
+            sub = f'<span class="muted">{r["soon"]} due soon</span>'
+        else:
+            sub = '<span style="color:#1e9e5a">on track</span>'
+        gcards.append(f"""<a class="gcard" href="/tasks?team={esc(r['id'])}">
+  <div class="gc-top"><span class="gc-dot" style="background:{dot}"></span>
+    <span class="gc-name">{esc(r['name'])}</span><span class="gc-chev">›</span></div>
+  <div class="gc-num"><b>{r['done']}</b>/ {r['total']} done</div>
+  <div class="ptrack"><div class="pfill" style="width:{frac}%;background:{bar}"></div></div>
+  <div class="gc-sub">{sub}</div>
+</a>""")
 
     checklist = []
     for label, pct_v in stats["checklist"]:
         if pct_v >= 90:
             icon, color = "✓", "#1e9e5a"
         elif pct_v >= 50:
-            icon, color = "🕓", "#d99513"
+            icon, color = "🕓", "#e8551f"
         else:
             icon, color = "●", "#d64545"
         checklist.append(
@@ -1190,23 +1275,23 @@ def completion_dashboard(stats: dict, day: str, user: dict | None = None,
             f'<span class="pct" style="color:{color}">{pct_v}%</span></li>'
         )
 
-    body = f"""<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
-<div><h1>Daily work completion</h1>
-<div class="sub" style="margin-bottom:0">{esc(stats['day_label'])} · generated {esc(stats['generated_at'])}</div></div>
-{pill}
+    body = f"""<h1 class="sr-only">Daily work completion</h1>
+<div class="dtop">
+  <div class="dtoggle"><a class="on" href="/">Today</a><a href="/">This week</a></div>
+  <div class="dright"><span class="live"><span class="ldot"></span>Live · updated just now</span>
+    <span class="kebab">⋯</span></div>
 </div>
-<div style="height:16px"></div>
 {toast_html}
+{hero}
+{statstrip}
 {_requests_card(stats.get("requests", []))}
-{tiles_html}
-<div class="card"><h3>Team roster</h3>
-{''.join(rows)}
-</div>
+{attention_card}
+<div class="eyebrow2">Groups · tap to open</div>
+<div class="groupgrid">{''.join(gcards)}</div>
+<div class="grid2">
 <div class="card"><h3>Today's report <span class="muted">· assembles itself from the groups' updates</span></h3>
 {group_report_cards(stats["group_reports"], stats["silent_groups"])}
 </div>
-<div class="grid2">
-<div class="card"><h3>Outstanding work</h3><ul class="worklist">{outstanding_html}</ul></div>
 <div class="card"><h3>Daily checklist · groups</h3><ul class="checklist">{''.join(checklist)}</ul></div>
 </div>
 <div class="sub"><a href="/?date={esc(stats['prev_day'])}">← {esc(stats['prev_day'])}</a>
@@ -1220,21 +1305,17 @@ def completion_dashboard(stats: dict, day: str, user: dict | None = None,
 # ---------------------------------------------------------------------------
 
 _GROUPS_CSS = """
-.gnode { border: 1px solid #262a31; border-radius: 12px; background: #171a21;
-  padding: 14px 16px; margin-bottom: 10px; }
+.gnode { border: 1px solid var(--line); border-radius: 14px; background: #fff;
+  padding: 15px 17px; margin-bottom: 10px; box-shadow: 0 1px 2px rgba(16,49,79,.05); }
 .gnode .ghead { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.gnode .gname { font-weight: 700; }
-.gnode .glead { color: #8a8f98; font-size: 13px; }
+.gnode .gname { font-weight: 800; color: var(--ink); }
+.gnode .glead { color: var(--muted); font-size: 13px; }
 .invite { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
-.invite .lbl { font-size: 12px; color: #8a8f98; min-width: 92px; }
-.invite input { flex: 1; min-width: 220px; font-size: 12px; color: #8ab4f8; }
+.invite .lbl { font-size: 12px; color: var(--muted); min-width: 92px; }
+.invite input { flex: 1; min-width: 220px; font-size: 12px; color: var(--navy); }
 .gactions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
 .gactions form { display: inline-flex; gap: 6px; align-items: center; }
-.addsub { margin-top: 10px; padding-top: 10px; border-top: 1px dashed #2c313a; }
-@media (prefers-color-scheme: light) {
-  .gnode { background: #fff; border-color: #e3e6ea; }
-  .addsub { border-color: #d4d9df; }
-}
+.addsub { margin-top: 10px; padding-top: 10px; border-top: 1px dashed #d5dce2; }
 """
 
 

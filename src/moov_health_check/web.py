@@ -204,6 +204,7 @@ def completion_stats(state: AppState, day: str, roster: dict | None = None) -> d
         g_done = sum(1 for t in gtasks if t.get("status") == "done")
         g_over = sum(1 for t in gtasks if is_overdue(t))
         g_block = sum(1 for t in gtasks if t.get("status") == "waiting")
+        g_soon = sum(1 for t in gtasks if tasks_mod.due_bucket(t, day) == "due_soon")
 
         todays = []
         for t in gtasks:
@@ -272,10 +273,14 @@ def completion_stats(state: AppState, day: str, roster: dict | None = None) -> d
             "id": tid, "name": info.get("team_name", tid),
             "lead": info.get("leader", info.get("manager", "")),
             "done": g_done, "total": len(gtasks),
-            "overdue": g_over, "blocked": g_block,
+            "overdue": g_over, "blocked": g_block, "soon": g_soon,
             "filed": updated, "last": last, "level": level,
         })
-    rows.sort(key=lambda r: (r["level"], r["name"].lower()))
+    # Group cards keep the roster's own order; the headline calls out the
+    # single group most in need of attention.
+    worst = max(rows, key=lambda r: (r["level"], r["overdue"]), default=None)
+    if worst and worst["level"] == 0:
+        worst = None
 
     g_total = len(roster)
     if tasks:
@@ -302,6 +307,30 @@ def completion_stats(state: AppState, day: str, roster: dict | None = None) -> d
         outstanding.append({"title": t.get("title", ""), "group": owner,
                             "note": note, "level": level})
     outstanding = outstanding[:6]
+
+    # "Needs attention now" — the overdue and blocked work, worst first, each
+    # with who owns it and where it sits, so the head can act on it directly.
+    attention = []
+    ordered = sorted(overdue, key=lambda t: t.get("due_date") or "") + \
+        [t for t in blocked if not is_overdue(t)]
+    for t in ordered:
+        due = t.get("due_date") or ""
+        if is_overdue(t):
+            n = (date_cls.fromisoformat(day) - date_cls.fromisoformat(due)).days
+            status_text = f"{n} day overdue" if n == 1 else f"{n} days overdue"
+        else:
+            status_text = "waiting on others"
+        gid = t.get("team_id", "")
+        attention.append({
+            "title": t.get("title", ""),
+            "person": t.get("assignee") or "unassigned",
+            "unassigned": not t.get("assignee"),
+            "group": team_names.get(gid, gid) or "—",
+            "team_id": gid,
+            "status_text": status_text,
+            "level": 2 if is_overdue(t) else 1,
+        })
+    attention = attention[:5]
 
     due_today_all = [t for t in tasks if t.get("due_date") == day]
     due_cleared = sum(1 for t in due_today_all if t.get("status") == "done")
@@ -335,15 +364,21 @@ def completion_stats(state: AppState, day: str, roster: dict | None = None) -> d
 
     d = date_cls.fromisoformat(day)
     day_label = f"{d.strftime('%A')}, {d.day} {d.strftime('%B')} · {g_total} group(s)"
+    hour = datetime.now(timezone.utc).hour
+    greeting = ("Good morning" if hour < 12 else
+                "Good afternoon" if hour < 18 else "Good evening")
     return {
         "requests": requests,
         "day_label": day_label,
+        "hero_date": f"{d.strftime('%A')} {d.day} {d.strftime('%B')}",
+        "greeting": greeting,
         "generated_at": datetime.now(timezone.utc).strftime("%H:%M UTC"),
         "tiles": {"done": len(done), "total": len(tasks),
                   "pending": len(pending), "overdue": len(overdue),
                   "blocked": len(blocked)},
         "pct": pct, "on_track": on_track, "groups_total": g_total,
-        "rows": rows, "outstanding": outstanding, "checklist": checklist,
+        "rows": rows, "worst": worst, "attention": attention,
+        "outstanding": outstanding, "checklist": checklist,
         "group_reports": group_reports, "silent_groups": silent_groups,
         "friction_items": friction_items, "friction_n": len(friction_items),
         "done_today": len(done_today), "updates_n": updates_n,

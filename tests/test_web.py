@@ -258,7 +258,7 @@ def test_dashboard_empty_day(server):
     assert "Daily work completion" in body
     assert "Team One" in body and "Team Two" in body
     assert "no updates yet" in body
-    assert "0 of 2 on track" in body
+    assert "0 of 2 groups on track" in body
     assert "Groups updated today" in body
     assert "Today's report" in body
 
@@ -313,7 +313,7 @@ def test_updates_assemble_the_report_with_link_and_friction(server):
     assert "in Email" in dash
     assert "https://mail.example.com/thread/9920" in dash  # the boss can open it
     assert "Waiting on external" in dash
-    assert "1 of 2 on track" in dash
+    assert "1 of 2 groups on track" in dash
 
 
 def test_member_updates_only_their_own_tasks(server):
