@@ -11,7 +11,18 @@
       "created_by": "Head of desk",
       "created_at": "2026-07-07 08:00 UTC",
       "updated_at": "2026-07-09 02:21 UTC",
-      "completed_on": "2026-07-09"
+      "completed_on": "2026-07-09",
+      "updates": {
+        "2026-07-09": {
+          "status": "done",
+          "note": "Week-29 space confirmed on all three loops",
+          "friction": "",
+          "friction_note": "",
+          "channel": "",
+          "by": "Diego R.",
+          "at": "2026-07-09 06:10 UTC"
+        }
+      }
     },
     {
       "id": "ex000002",
@@ -24,7 +35,18 @@
       "created_by": "Head of desk",
       "created_at": "2026-07-07 08:00 UTC",
       "updated_at": "2026-07-09 03:22 UTC",
-      "completed_on": "2026-07-09"
+      "completed_on": "2026-07-09",
+      "updates": {
+        "2026-07-09": {
+          "status": "done",
+          "note": "",
+          "friction": "",
+          "friction_note": "",
+          "channel": "",
+          "by": "Diego R.",
+          "at": "2026-07-09 06:10 UTC"
+        }
+      }
     },
     {
       "id": "ex000003",
@@ -37,7 +59,18 @@
       "created_by": "Head of desk",
       "created_at": "2026-07-07 08:00 UTC",
       "updated_at": "2026-07-09 04:23 UTC",
-      "completed_on": "2026-07-09"
+      "completed_on": "2026-07-09",
+      "updates": {
+        "2026-07-09": {
+          "status": "done",
+          "note": "Gate-in clean, no rolls",
+          "friction": "",
+          "friction_note": "",
+          "channel": "",
+          "by": "Diego R.",
+          "at": "2026-07-09 06:20 UTC"
+        }
+      }
     },
     {
       "id": "ex000004",
@@ -50,7 +83,18 @@
       "created_by": "Head of desk",
       "created_at": "2026-07-07 08:00 UTC",
       "updated_at": "2026-07-09 05:24 UTC",
-      "completed_on": ""
+      "completed_on": "",
+      "updates": {
+        "2026-07-09": {
+          "status": "doing",
+          "note": "Alternative sailing found, confirming rate",
+          "friction": "",
+          "friction_note": "",
+          "channel": "smartmoov",
+          "by": "Diego R.",
+          "at": "2026-07-09 06:20 UTC"
+        }
+      }
     },
     {
       "id": "ex000005",
@@ -76,7 +120,18 @@
       "created_by": "Head of desk",
       "created_at": "2026-07-07 08:00 UTC",
       "updated_at": "2026-07-09 01:20 UTC",
-      "completed_on": ""
+      "completed_on": "",
+      "updates": {
+        "2026-07-09": {
+          "status": "doing",
+          "note": "12 of 14 uploaded, rest by 16:00",
+          "friction": "",
+          "friction_note": "",
+          "channel": "smartmoov",
+          "by": "Ana M.",
+          "at": "2026-07-09 06:30 UTC"
+        }
+      }
     },
     {
       "id": "ex000007",
@@ -84,12 +139,23 @@
       "team_id": "documentation",
       "assignee": "",
       "due_date": "2026-07-11",
-      "status": "todo",
+      "status": "doing",
       "notes": "",
       "created_by": "Head of desk",
       "created_at": "2026-07-07 08:00 UTC",
       "updated_at": "2026-07-09 02:21 UTC",
-      "completed_on": ""
+      "completed_on": "",
+      "updates": {
+        "2026-07-09": {
+          "status": "doing",
+          "note": "",
+          "friction": "",
+          "friction_note": "",
+          "channel": "",
+          "by": "Ana M.",
+          "at": "2026-07-09 06:30 UTC"
+        }
+      }
     },
     {
       "id": "ex000008",
@@ -115,7 +181,18 @@
       "created_by": "Head of desk",
       "created_at": "2026-07-07 08:00 UTC",
       "updated_at": "2026-07-09 04:23 UTC",
-      "completed_on": ""
+      "completed_on": "",
+      "updates": {
+        "2026-07-09": {
+          "status": "doing",
+          "note": "Follow-up sent, waiting on confirmation by EOD",
+          "friction": "coordination",
+          "friction_note": "needed demurrage decision from sales",
+          "channel": "email",
+          "by": "Wei L.",
+          "at": "2026-07-09 06:40 UTC"
+        }
+      }
     },
     {
       "id": "ex00000a",
@@ -154,7 +231,18 @@
       "created_by": "Head of desk",
       "created_at": "2026-07-07 08:00 UTC",
       "updated_at": "2026-07-09 01:20 UTC",
-      "completed_on": "2026-07-08"
+      "completed_on": "2026-07-09",
+      "updates": {
+        "2026-07-09": {
+          "status": "done",
+          "note": "all 12 uploaded, 1 waiting on shipper",
+          "friction": "",
+          "friction_note": "",
+          "channel": "",
+          "by": "Wei L.",
+          "at": "2026-07-09 06:40 UTC"
+        }
+      }
     },
     {
       "id": "ex00000d",

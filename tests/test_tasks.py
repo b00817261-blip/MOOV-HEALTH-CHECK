@@ -80,3 +80,34 @@ def test_counts():
     assert sc["todo"] == 1 and sc["doing"] == 1 and sc["done"] == 1
     dc = tasks_mod.due_counts(tasks, TODAY)
     assert dc["no_due"] == 1 and dc["overdue"] == 1 and dc["complete"] == 1
+
+
+def test_record_update_stores_daily_entry(store):
+    t = store.add("Chase carrier", team_id="t1")
+    got = store.record_update(t["id"], TODAY, status="doing",
+                              note="follow-up sent", friction="external",
+                              friction_note="carrier silent", channel="email",
+                              by="Wei L.")
+    upd = got["updates"][TODAY]
+    assert upd["status"] == "doing" and upd["note"] == "follow-up sent"
+    assert upd["friction"] == "external" and upd["channel"] == "email"
+    assert upd["by"] == "Wei L."
+    assert tasks_mod.update_for_day(got, TODAY) == upd
+    assert tasks_mod.update_for_day(got, "1999-01-01") is None
+
+    # done via update stamps completed_on with the update's day
+    got = store.record_update(t["id"], TODAY, status="done")
+    assert got["completed_on"] == TODAY
+    assert tasks_mod.updated_days(store.load()) == {TODAY: 1}
+
+
+def test_record_update_validates(store):
+    t = store.add("A task")
+    import pytest as _pytest
+    with _pytest.raises(ValueError):
+        store.record_update(t["id"], TODAY, status="bogus")
+    with _pytest.raises(ValueError):
+        store.record_update(t["id"], TODAY, friction="bogus")
+    with _pytest.raises(ValueError):
+        store.record_update(t["id"], TODAY, channel="fax")
+    assert store.record_update("nope", TODAY, status="done") is None

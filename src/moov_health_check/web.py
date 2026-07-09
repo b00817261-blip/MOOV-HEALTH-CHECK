@@ -8,40 +8,37 @@ and open http://localhost:8000
 
 Pages
 -----
-* ``/``             – the manager's daily dashboard (pick any date)
-* ``/submit``       – the form each team lead fills in at the start of shift
-* ``/tasks``        – the shared task list: the manager assigns, teams tick off
-* ``/calendar``     – month view of task deadlines & filed reports
-* ``/sheet``        – printable "Daily Status Report" sheet for any date
+* ``/``             – manager: "Daily work completion" dashboard (any date)
+* ``/me``           – group lead: today's tasks, updated in a minute
+* ``/updates``      – POST target for the lead's daily updates
+* ``/tasks``        – the task board: the manager assigns, groups tick off
+* ``/groups``       – manager: set up the groups that report to him
+* ``/calendar``     – month view of deadlines & update days
+* ``/sheet``        – printable daily status report, assembled from updates
 * ``/history``      – saved reports: browse back & consolidate over a range
-* ``/report.json``  – machine-readable version of the dashboard
+* ``/report.json``  – machine-readable KPI report (CLI-compatible)
 
-Submissions are stored exactly like the CLI stores them (one JSON per team per
-day under the reports directory), so the website and the ``submit``/``report``
-commands are fully interchangeable.
+There is no separate report form: group leads just update their tasks —
+status, a note, any friction — and the manager's report assembles itself.
 """
 
 from __future__ import annotations
 
-import html
-import json
 import re
 from datetime import date as date_cls, datetime, timedelta, timezone
 from http import cookies as cookies_mod
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, quote, quote_plus, unquote, urlparse
-
 from pathlib import Path
+from urllib.parse import parse_qs, quote, quote_plus, unquote, urlparse
 
 from .config import load_metric_definitions
 from .focus import build_focus_items
 from .health import build_report
 from .ingest import load_reports_dir, load_roster, save_roster
-from .models import Direction
 from .report import render
 from .tasks import TaskStore
 from . import pages
-from . import submit as submit_mod
+from . import tasks as tasks_mod
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _MONTH_RE = re.compile(r"^\d{4}-\d{2}$")
@@ -133,11 +130,11 @@ def _hhmm_today(ts: str, day: str) -> str:
 
 
 def completion_stats(state: AppState, day: str) -> dict:
-    """Everything the manager's 'Daily work completion' dashboard shows."""
+    """Everything the manager's 'Daily work completion' dashboard shows,
+    assembled purely from the groups' task updates — no separate report."""
     roster = state.roster()
-    snapshots, _ = load_reports_dir(state.reports_dir, day, roster)
-    snap_by = {s.team_id: s for s in snapshots}
-    tasks = [t for t in state.tasks.load() if t.get("status") != "canceled"]
+    all_tasks = state.tasks.load()
+    tasks = [t for t in all_tasks if t.get("status") != "canceled"]
 
     def is_open(t):
         return t.get("status") in ("todo", "doing")
@@ -149,43 +146,90 @@ def completion_stats(state: AppState, day: str) -> dict:
     blocked = [t for t in tasks if t.get("status") == "waiting"]
     overdue = [t for t in tasks if is_overdue(t)]
     pending = [t for t in tasks if is_open(t) and not is_overdue(t)]
+    done_today = [t for t in done if t.get("completed_on") == day]
+
+    team_names = {tid: info.get("team_name", tid) for tid, info in roster.items()}
 
     rows = []
-    on_track = active_groups = filed_count = clean_count = 0
+    group_reports = []
+    silent_groups = []
+    friction_items = []
+    updates_n = 0
+    on_track = active_groups = updated_groups = clean_count = 0
     for tid, info in roster.items():
         gtasks = [t for t in tasks if t.get("team_id") == tid]
         g_done = sum(1 for t in gtasks if t.get("status") == "done")
         g_over = sum(1 for t in gtasks if is_overdue(t))
         g_block = sum(1 for t in gtasks if t.get("status") == "waiting")
-        snap = snap_by.get(tid)
-        filed = snap is not None
+
+        todays = []
+        for t in gtasks:
+            upd = tasks_mod.update_for_day(t, day)
+            if upd:
+                todays.append((t, upd))
+        updated = bool(todays)
+        updates_n += len(todays)
 
         times = [_hhmm_today(t.get("updated_at", ""), day) for t in gtasks]
-        if filed:
-            times.append(_hhmm_today(snap.submitted_at, day))
+        times += [_hhmm_today(u.get("at", ""), day) for _, u in todays]
         times = [x for x in times if x]
         last = max(times) if times else ""
 
-        if g_over >= 3 or (not filed and not last):
+        if g_over >= 3 or (not updated and not last):
             level = 2
-        elif g_over or not filed:
+        elif g_over or not updated:
             level = 1
         else:
             level = 0
-        if filed and not g_over:
+        if updated and not g_over:
             on_track += 1
         if last:
             active_groups += 1
-        if filed:
-            filed_count += 1
-            if not snap.blockers:
+
+        g_friction = 0
+        if updated:
+            updated_groups += 1
+            items = []
+            for t, upd in sorted(todays, key=lambda p: p[1].get("status") != "done"):
+                friction_label = ""
+                if upd.get("friction"):
+                    g_friction += 1
+                    friction_label = tasks_mod.FRICTION_REASONS.get(
+                        upd["friction"], upd["friction"])
+                    friction_items.append({
+                        "group": info.get("team_name", tid),
+                        "title": t.get("title", ""),
+                        "reason": friction_label,
+                        "note": upd.get("friction_note", ""),
+                    })
+                items.append({
+                    "level": 0 if upd.get("status") == "done" else 1,
+                    "title": t.get("title", ""),
+                    "note": upd.get("note", ""),
+                    "channel": tasks_mod.CHANNELS.get(upd.get("channel", ""), ""),
+                    "friction": friction_label,
+                    "friction_note": upd.get("friction_note", ""),
+                })
+            updater = next((u.get("by") for _, u in todays if u.get("by")), "")
+            group_reports.append({
+                "name": info.get("team_name", tid),
+                "lead": updater or info.get("manager", ""),
+                "done_n": sum(1 for _, u in todays if u.get("status") == "done"),
+                "prog_n": sum(1 for _, u in todays if u.get("status") != "done"),
+                "friction_n": g_friction,
+                "items": items,
+            })
+            if not g_friction:
                 clean_count += 1
+        else:
+            silent_groups.append(info.get("team_name", tid))
+
         rows.append({
             "id": tid, "name": info.get("team_name", tid),
             "lead": info.get("manager", ""),
             "done": g_done, "total": len(gtasks),
             "overdue": g_over, "blocked": g_block,
-            "filed": filed, "last": last, "level": level,
+            "filed": updated, "last": last, "level": level,
         })
     rows.sort(key=lambda r: (r["level"], r["name"].lower()))
 
@@ -193,9 +237,8 @@ def completion_stats(state: AppState, day: str) -> dict:
     if tasks:
         pct = round(100 * len(done) / len(tasks))
     else:
-        pct = round(100 * filed_count / g_total) if g_total else 0
+        pct = round(100 * updated_groups / g_total) if g_total else 0
 
-    team_names = {tid: info.get("team_name", tid) for tid, info in roster.items()}
     outstanding = []
     for t in sorted((t for t in tasks if t.get("status") in ("todo", "doing", "waiting")),
                     key=lambda t: (not is_overdue(t), t.get("due_date") or "9999-99-99")):
@@ -216,14 +259,17 @@ def completion_stats(state: AppState, day: str) -> dict:
                             "note": note, "level": level})
     outstanding = outstanding[:6]
 
+    due_today_all = [t for t in tasks if t.get("due_date") == day]
+    due_cleared = sum(1 for t in due_today_all if t.get("status") == "done")
     open_all = len(pending) + len(overdue) + len(blocked)
     checklist = [
-        ("Daily reports filed", round(100 * filed_count / g_total) if g_total else 0),
+        ("Groups updated today",
+         round(100 * updated_groups / g_total) if g_total else 0),
         ("Tasks on schedule",
          round(100 * len(pending) / open_all) if open_all else 100),
-        ("Groups active today",
-         round(100 * active_groups / g_total) if g_total else 0),
-        ("No blockers reported",
+        ("Today's dues cleared",
+         round(100 * due_cleared / len(due_today_all)) if due_today_all else 100),
+        ("No friction reported",
          round(100 * clean_count / g_total) if g_total else 0),
     ]
 
@@ -237,6 +283,10 @@ def completion_stats(state: AppState, day: str) -> dict:
                   "blocked": len(blocked)},
         "pct": pct, "on_track": on_track, "groups_total": g_total,
         "rows": rows, "outstanding": outstanding, "checklist": checklist,
+        "group_reports": group_reports, "silent_groups": silent_groups,
+        "friction_items": friction_items, "friction_n": len(friction_items),
+        "done_today": len(done_today), "updates_n": updates_n,
+        "updated_groups": updated_groups,
         "prev_day": _shift_date(day, -1), "next_day": _shift_date(day, 1),
     }
 
@@ -312,38 +362,68 @@ def tasks_page(state: AppState, user: dict, team: str = "", status: str = "",
 
 
 def calendar_page(state: AppState, user: dict, month: str) -> str:
+    tasks = state.tasks.load()
     return pages.calendar_page(
-        state.roster(), state.tasks.load(),
-        pages.report_dates(state.reports_dir), month, _today(), user=user,
+        state.roster(), tasks, tasks_mod.updated_days(tasks),
+        month, _today(), user=user,
     )
 
 
 def sheet_page(state: AppState, user: dict, day: str) -> str:
-    return pages.sheet_page(
-        _full_report(state, day), state.tasks.load(), day, state.roster(),
-        user=user,
-    )
+    return pages.sheet_page(completion_stats(state, day), day, user=user)
 
 
 def history_page(state: AppState, user: dict, date_from: str = "",
                  date_to: str = "") -> str:
-    def load_day(d: str):
-        snaps, _ = load_reports_dir(state.reports_dir, d, None)
-        return snaps
-
     return pages.history_page(
-        pages.report_dates(state.reports_dir), load_day, state.roster(),
-        _today(), date_from=date_from, date_to=date_to, user=user,
+        state.tasks.load(), state.roster(), _today(),
+        date_from=date_from, date_to=date_to, user=user,
     )
 
 
-def me_page(state: AppState, user: dict, day: str, submitted: bool = False) -> str:
-    report = _full_report(state, day)
-    team_health = next(
-        (t for t in report.teams if t.team_id == user["team_id"]), None
-    )
-    return pages.me_page(user, team_health, state.tasks.load(), day,
-                         submitted=submitted)
+def me_page(state: AppState, user: dict, day: str, sent: int = 0) -> str:
+    return pages.me_page(user, state.tasks.load(), day, sent=sent)
+
+
+def handle_updates(state: AppState, form: dict, user: dict, day: str) -> int:
+    """A group lead's 'Submit my updates' — one POST covering many tasks.
+
+    Records an update for every task where they set a status, wrote a note,
+    flagged friction, or picked a channel. Returns how many were recorded.
+    """
+    tids = [t[:40] for t in form.get("tid", [])]
+    visible = {t["id"]: t for t in pages.visible_tasks(state.tasks.load(), user)}
+
+    def field(name: str) -> str:
+        return (form.get(name, [""])[0] or "").strip()
+
+    recorded = 0
+    for tid in tids:
+        task = visible.get(tid)
+        if task is None:
+            continue
+        status = field(f"status_{tid}")
+        if status not in ("done", "doing"):
+            status = ""
+        note = field(f"note_{tid}")[:300]
+        friction = ""
+        friction_note = ""
+        if field(f"friction_{tid}") == "friction":
+            friction = field(f"reason_{tid}")
+            if friction not in tasks_mod.FRICTION_REASONS:
+                friction = "other"
+            friction_note = field(f"fdetail_{tid}")[:300]
+        channel = field(f"channel_{tid}")
+        if channel not in tasks_mod.CHANNELS:
+            channel = ""
+        changed_status = status and status != task.get("status")
+        if not (changed_status or note or friction or channel):
+            continue  # nothing meaningful on this card
+        state.tasks.record_update(tid, day, status=status, note=note,
+                                  friction=friction, friction_note=friction_note,
+                                  channel=channel, by=user.get("name", ""))
+        recorded += 1
+    return recorded
 
 
 def handle_task_action(state: AppState, form: dict, user: dict) -> tuple[bool, str]:
@@ -376,7 +456,14 @@ def handle_task_action(state: AppState, form: dict, user: dict) -> tuple[bool, s
                 return False, "That task no longer exists."
             if not is_manager and task not in pages.visible_tasks([task], user):
                 return False, "That task belongs to another team."
-            task = state.tasks.update(task["id"], status=field("status"))
+            if is_manager:
+                task = state.tasks.update(task["id"], status=field("status"))
+            else:
+                # A lead's status change counts as a daily update, so it
+                # shows up in the manager's assembled report.
+                task = state.tasks.record_update(
+                    task["id"], _today(), status=field("status"),
+                    by=user.get("name", ""))
             verb = "marked done 🎉" if task["status"] == "done" else \
                 f"moved to {task['status'].replace('_', ' ')}"
             return True, f"Task {verb}: {task['title']}"
@@ -391,222 +478,6 @@ def handle_task_action(state: AppState, form: dict, user: dict) -> tuple[bool, s
     return False, "Unknown action."
 
 
-_FORM_CSS = """
-:root { color-scheme: light dark; }
-* { box-sizing: border-box; }
-body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  margin: 0; background: #0f1115; color: #e6e8eb; line-height: 1.5; }
-.wrap { max-width: 720px; margin: 0 auto; padding: 32px 20px 64px; }
-h1 { font-size: 22px; margin: 0 0 4px; }
-.sub { color: #8a8f98; font-size: 14px; margin-bottom: 22px; }
-a { color: #8ab4f8; text-decoration: none; }
-form { display: block; }
-fieldset { border: 1px solid #262a31; border-radius: 12px; background: #171a21;
-  padding: 16px 18px; margin: 0 0 18px; }
-legend { font-size: 13px; text-transform: uppercase; letter-spacing: 1px;
-  color: #8a8f98; padding: 0 8px; }
-label { display: block; font-size: 14px; font-weight: 600; margin: 12px 0 4px; }
-label:first-of-type { margin-top: 2px; }
-.hint { font-weight: 400; color: #8a8f98; font-size: 12px; }
-input[type=number], input[type=text], input[type=date], select, textarea {
-  width: 100%; padding: 9px 11px; border-radius: 8px; border: 1px solid #2c313a;
-  background: #0f1115; color: #e6e8eb; font-size: 15px; font-family: inherit; }
-textarea { min-height: 64px; resize: vertical; }
-input:focus, select:focus, textarea:focus { outline: none; border-color: #8ab4f8; }
-.row { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
-@media (max-width: 560px) { .row { grid-template-columns: 1fr; } }
-button { width: 100%; margin-top: 6px; padding: 13px; font-size: 16px; font-weight: 700;
-  color: #fff; background: #1e9e5a; border: 0; border-radius: 10px; cursor: pointer; }
-button:hover { background: #23b568; }
-.editing { border-left: 4px solid #d99513; background: rgba(217,149,19,.1);
-  border-radius: 8px; padding: 10px 14px; font-size: 14px; margin-bottom: 18px; }
-@media (prefers-color-scheme: light) {
-  body { background: #f6f7f9; color: #1a1d22; }
-  fieldset { background: #fff; border-color: #e3e6ea; }
-  input[type=number], input[type=text], input[type=date], select, textarea {
-    background: #fff; color: #1a1d22; border-color: #d4d9df; }
-  a { color: #1a56db; }
-}
-"""
-
-
-def submit_form_page(state: AppState, day: str, team_id: str = "", error: str = "",
-                     user: dict | None = None) -> str:
-    esc = html.escape
-    roster = state.roster()
-    is_worker = bool(user) and user.get("role") == "worker"
-    if is_worker:
-        team_id = user["team_id"]  # a team member always files for their team
-
-    # Prefill from an existing submission (lets a lead correct their report).
-    existing = {}
-    if team_id:
-        snapshots, _ = load_reports_dir(state.reports_dir, day, None)
-        for snap in snapshots:
-            if snap.team_id == team_id:
-                existing = {
-                    "metrics": snap.metrics,
-                    "accomplished": snap.accomplished,
-                    "blockers": snap.blockers,
-                    "plan": snap.plan,
-                    "submitted_by": snap.submitted_by,
-                }
-                break
-
-    options = ['<option value="">— choose your team —</option>']
-    for tid, info in roster.items():
-        sel = " selected" if tid == team_id else ""
-        options.append(
-            f'<option value="{esc(tid)}"{sel}>{esc(info.get("team_name", tid))} '
-            f'({esc(info.get("region", ""))})</option>'
-        )
-
-    def fmt_target(d) -> str:
-        text = f"{d.target:g}"
-        if d.unit == "%":
-            return f"{text}%"
-        if d.unit == "$":
-            return f"${text}"
-        if d.unit:
-            return f"{text} {d.unit}"
-        return text
-
-    metric_fields = []
-    ex_metrics = existing.get("metrics", {})
-    for key, d in state.definitions.items():
-        unit = f" ({d.unit})" if d.unit else ""
-        goal = "≥" if d.direction is Direction.HIGHER_IS_BETTER else "≤"
-        val = ex_metrics.get(key)
-        val_attr = f' value="{val:g}"' if val is not None else ""
-        metric_fields.append(
-            f'<div><label for="m_{esc(key)}">{esc(d.label)}{esc(unit)} '
-            f'<span class="hint">target {goal} {esc(fmt_target(d))}</span></label>'
-            f'<input type="number" step="any" id="m_{esc(key)}" '
-            f'name="metric_{esc(key)}"{val_attr} placeholder="leave blank if unknown"></div>'
-        )
-
-    editing_note = ""
-    if existing:
-        editing_note = (
-            '<div class="editing">✏️ Your team already filed a report today — '
-            "it's loaded below. Saving will replace it.</div>"
-        )
-    error_note = ""
-    if error:
-        error_note = (
-            f'<div class="editing" style="border-left-color:#d64545">⚠ {esc(error)}</div>'
-        )
-
-    if is_worker:
-        team_field = (
-            f'<div><label>Team</label>'
-            f'<input type="text" value="{esc(user.get("team_name", team_id))}" disabled>'
-            f'<input type="hidden" name="team" value="{esc(team_id)}"></div>'
-        )
-        sub_line = ('Takes about two minutes. After sending, your performance '
-                    'appears on <a href="/me">My day</a>.')
-        back_link = f'<div class="sub" style="margin-top:14px"><a href="/me">← Back to My day</a></div>'
-    else:
-        team_field = f"""<div><label for="team">Team</label>
-        <select id="team" name="team" required
-          onchange="location='/submit?date={esc(day)}&team='+encodeURIComponent(this.value)">
-          {''.join(options)}
-        </select></div>"""
-        sub_line = (f'Takes about two minutes. Your manager sees it on the '
-                    f'<a href="/?date={esc(day)}">daily dashboard</a>.')
-        back_link = ""
-
-    by_value = existing.get("submitted_by", "") or (user or {}).get("name", "")
-
-    return f"""<!DOCTYPE html>
-<html lang="en"><head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>File your team's daily report — MOOV</title>
-<style>{_FORM_CSS}</style></head>
-<body><div class="wrap">
-<h1>📝 Daily team report</h1>
-<div class="sub">{sub_line}</div>
-{error_note}{editing_note}
-<form method="post" action="/submit">
-  <fieldset>
-    <legend>Who &amp; when</legend>
-    <div class="row">
-      {team_field}
-      <div><label for="date">Report date</label>
-        <input type="date" id="date" name="date" value="{esc(day)}" required></div>
-    </div>
-    <label for="by">Your name <span class="hint">(optional)</span></label>
-    <input type="text" id="by" name="by" value="{esc(by_value)}">
-  </fieldset>
-
-  <fieldset>
-    <legend>Today's numbers <span class="hint">— skip anything you don't have</span></legend>
-    <div class="row">
-      {''.join(metric_fields)}
-    </div>
-  </fieldset>
-
-  <fieldset>
-    <legend>In your own words</legend>
-    <label for="accomplished">What did the team get done since the last report?</label>
-    <textarea id="accomplished" name="accomplished">{esc(existing.get('accomplished', ''))}</textarea>
-    <label for="blockers">Any blockers or help needed?</label>
-    <textarea id="blockers" name="blockers">{esc(existing.get('blockers', ''))}</textarea>
-    <label for="plan">What is the plan for today?</label>
-    <textarea id="plan" name="plan">{esc(existing.get('plan', ''))}</textarea>
-  </fieldset>
-
-  <button type="submit">Send report to my manager</button>
-</form>
-{back_link}
-</div></body></html>"""
-
-
-def handle_submission(state: AppState, form: dict,
-                      user: dict | None = None) -> tuple[bool, str, str]:
-    """Process a submitted form. Returns ``(ok, team_name_or_error, date)``."""
-
-    def field(name: str) -> str:
-        return (form.get(name, [""])[0] or "").strip()
-
-    if user and user.get("role") == "worker":
-        team_id = user["team_id"]  # workers can only file for their own team
-    else:
-        team_id = field("team")
-    day = field("date") or _today()
-    if not _DATE_RE.match(day):
-        return False, "Invalid date.", _today()
-
-    roster = state.roster()
-    team_info = roster.get(team_id)
-    if team_info is None:
-        return False, "Please choose your team from the list.", day
-
-    metrics = {}
-    for key in state.definitions:
-        raw = field(f"metric_{key}")
-        if not raw:
-            continue
-        try:
-            metrics[key] = float(raw)
-        except ValueError:
-            return False, f"'{state.definitions[key].label}' needs a number (got {raw!r}).", day
-
-    accomplished = field("accomplished")
-    blockers = field("blockers")
-    plan = field("plan")
-    if not metrics and not (accomplished or blockers or plan):
-        return False, "Nothing to send — enter at least one number or a note.", day
-
-    prev = submit_mod.previous_submission(state.reports_dir, team_id, day)
-    submission = submit_mod.build_submission(
-        team_info, day, metrics,
-        accomplished=accomplished, blockers=blockers, plan=plan,
-        submitted_by=field("by"), prev_metrics=(prev or {}).get("metrics", {}),
-    )
-    submit_mod.save_submission(state.reports_dir, day, submission)
-    return True, team_info.get("team_name", team_id), day
 
 
 # ---------------------------------------------------------------------------
@@ -665,7 +536,7 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         if path == "/logout":
             self._redirect("/login", set_cookie=clear_user_cookie())
             return
-        if path not in ("/", "/me", "/submit", "/tasks", "/calendar", "/sheet",
+        if path not in ("/", "/me", "/tasks", "/calendar", "/sheet",
                         "/history", "/groups"):
             self._send("Not found.", "text/plain; charset=utf-8", 404)
             return
@@ -686,11 +557,11 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
             if is_manager:
                 self._redirect(f"/?date={day}")
                 return
-            submitted = bool(qs.get("submitted", [""])[0])
-            self._send(me_page(self.state, user, day, submitted=submitted))
-        elif path == "/submit":
-            team = (qs.get("team", [""])[0])[:80]
-            self._send(submit_form_page(self.state, day, team, user=user))
+            try:
+                sent = int((qs.get("sent", ["0"])[0] or "0")[:4])
+            except ValueError:
+                sent = 0
+            self._send(me_page(self.state, user, day, sent=sent))
         elif path == "/tasks":
             team = (qs.get("team", [""])[0])[:80] if is_manager else ""
             status = (qs.get("status", [""])[0])[:20]
@@ -730,7 +601,7 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):  # noqa: N802
         path = urlparse(self.path).path
-        if path not in ("/submit", "/tasks", "/login", "/groups"):
+        if path not in ("/updates", "/tasks", "/login", "/groups"):
             self._send("Not found.", "text/plain; charset=utf-8", 404)
             return
         length = min(int(self.headers.get("Content-Length", 0) or 0), 1_000_000)
@@ -782,15 +653,12 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
                 self._redirect(f"/tasks?{back}{sep}{key}={quote_plus(message)}")
             return
 
-        ok, result, day = handle_submission(self.state, form, user)
-        if ok:
-            if user["role"] == "worker":
-                self._redirect(f"/me?date={day}&submitted=1")
-            else:
-                self._redirect(f"/?date={day}&submitted={result}")
-        else:
-            team = field("team")[:80]
-            self._send(submit_form_page(self.state, day, team, error=result, user=user))
+        # /updates — a group lead submits the day's task updates in one go.
+        if user["role"] != "worker":
+            self._redirect("/")
+            return
+        recorded = handle_updates(self.state, form, user, _today())
+        self._redirect(f"/me?sent={max(recorded, 1)}")
 
     def log_message(self, fmt, *args):  # quieter default logging
         print(f"  {self.address_string()} — {fmt % args}")
@@ -803,9 +671,9 @@ def serve(reports_dir: str, roster_path: str, config_path: str | None,
     shown_host = "localhost" if host in ("0.0.0.0", "127.0.0.1", "") else host
     print("MOOV Health Check website running:")
     print(f"  Sign in:       http://{shown_host}:{port}/login")
-    print(f"    → managers get the dashboard, task assignment, daily sheet & history")
-    print(f"    → team members get My day, their tasks & the report form")
-    print(f"  Reports dir:   {reports_dir}")
+    print(f"    → the manager gets the completion dashboard, task board, groups & sheet")
+    print(f"    → group leads just update their tasks; the report assembles itself")
+    print(f"  Data dir:      {reports_dir}")
     print("Press Ctrl+C to stop.")
     try:
         httpd.serve_forever()

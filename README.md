@@ -47,19 +47,24 @@ completely different workspaces:
 | `/calendar` | A month view of every deadline and every filed report — click a day to open its sheet. |
 | `/history` | **Saved reports**: every day the teams have reported, plus a consolidated table over any date range. |
 
-### 🧑‍🔧 A team member's workspace (green)
+### 🧑‍🔧 A group lead's workspace (green)
+
+**There is no report form.** Leads just update their tasks and the manager's
+report assembles itself.
 
 | Page | What it does |
 |------|--------------|
-| `/me` | **My day**: has my team reported yet? (one-click to file), my team's performance dashboard once the report is in, my open tasks with **✓ Done** buttons. |
-| `/submit` | The two-minute daily report form, locked to their own team, name prefilled. |
-| `/tasks` | Only *their* tasks (their team's, theirs by name, or unassigned) — they update statuses but can't add or delete. |
-| `/calendar` | Their deadlines and reporting days. |
+| `/me` | **Today's tasks** — swipe through each card: **✓ Done** or **In progress**, "what you did" (optional), **Any friction?** (lack of coordination / not enough time / waiting on external / unclear scope / system issue), and **where's it at** (Email / SmartMOOV / Teams / Note). One submit, about a minute. |
+| `/tasks` | Only *their* tasks (their group's, theirs by name, or unassigned) — status changes here also count as daily updates. |
+| `/calendar` | Their deadlines and update days. |
 
-Signing in is picking a door (plus your team and name if you're a team
-member) — a cookie remembers it, **Sign out** switches roles. There are
-deliberately no passwords: the site is designed for a trusted office
-network/VPN, and the roles separate *workspaces*, not secrets.
+Every update lands in the manager's **Today's report** card ("Wei L. · 1 done
+· 1 in progress"), the printable daily sheet, and the saved-reports history.
+
+Signing in is picking a door (plus your group and name if you're a lead) —
+a cookie remembers it, **Sign out** switches roles. There are deliberately
+no passwords: the site is designed for a trusted office network/VPN, and
+the roles separate *workspaces*, not secrets.
 
 `/report.json` stays open for other systems (cron jobs, Slack bots, …).
 Tasks are stored in `<reports-dir>/tasks.json`, right next to the daily report

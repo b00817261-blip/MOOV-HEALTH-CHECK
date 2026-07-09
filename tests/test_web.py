@@ -7,6 +7,7 @@ The site has two workspaces behind a cookie sign-in:
 
 import http.cookiejar
 import json
+import re
 import threading
 import urllib.error
 import urllib.parse
@@ -43,7 +44,7 @@ class Client:
             return resp.status, resp.read().decode("utf-8")
 
     def post(self, path: str, fields: dict) -> tuple[int, str]:
-        data = urllib.parse.urlencode(fields).encode()
+        data = urllib.parse.urlencode(fields, doseq=True).encode()
         req = urllib.request.Request(self.base + path, data=data, method="POST")
         with self.opener.open(req) as resp:  # follows the 303 redirect
             return resp.status, resp.read().decode("utf-8")
@@ -84,7 +85,7 @@ def worker(server, team="t1", name="Aki") -> Client:
 def test_anonymous_is_sent_to_login(server):
     c = Client(server)
     for path in ("/", "/me", "/tasks", "/calendar", "/sheet", "/history",
-                 "/submit"):
+                 "/groups"):
         _, body = c.get(path)  # follows the redirect
         assert "Pick yours" in body, path
 
@@ -107,10 +108,10 @@ def test_login_pages_and_roles(server):
     # Worker lands on My day; the dashboard bounces them back there.
     w = worker(server)
     _, body = w.get("/")
-    assert "My day" in body or "Hello" in body
+    assert "Today's tasks" in body
     _, body = w.get("/me")
-    assert "Hello Aki" in body
-    assert "not filed yet" in body
+    assert "Aki" in body
+    assert "Nothing on your plate" in body  # no tasks assigned yet
 
     # Sign out returns to the login screen.
     _, body = m.get("/logout")
@@ -119,9 +120,9 @@ def test_login_pages_and_roles(server):
 
 def test_worker_cannot_open_manager_pages(server):
     w = worker(server)
-    for path in ("/sheet", "/history"):
+    for path in ("/sheet", "/history", "/groups"):
         _, body = w.get(path)
-        assert "Hello Aki" in body, path  # bounced to /me
+        assert "Today's tasks" in body, path  # bounced to /me
 
 
 def test_interfaces_look_different(server):
@@ -157,99 +158,87 @@ def test_dashboard_empty_day(server):
     _, body = manager(server).get(f"/?date={DAY}")
     assert "Daily work completion" in body
     assert "Team One" in body and "Team Two" in body
-    assert "no report yet" in body            # both groups still silent
+    assert "no updates yet" in body           # both groups still silent
     assert "0 of 2 on track" in body
-    assert "Daily reports filed" in body      # the checklist card
+    assert "Groups updated today" in body     # the checklist card
+    assert "Today's report" in body           # the assembled-report card
+    assert "No updates yet from" in body
 
 
-def test_dashboard_reflects_reports_and_tasks(server):
-    m = manager(server)
-    m.post("/tasks", {"action": "add", "title": "Late job", "team_id": "t1",
-                      "due_date": "2020-01-01"})   # overdue
-    m.post("/tasks", {"action": "add", "title": "Fine job", "team_id": "t2",
-                      "due_date": "2999-01-01"})
-    worker(server, team="t2", name="Bea").post("/submit", {
-        "date": DAY, "accomplished": "did it"})
-
-    _, body = m.get(f"/?date={DAY}")
-    assert "1 of 2 on track" in body           # t2 filed & clean, t1 overdue+silent
-    assert "1 overdue" in body                 # t1's roster row flag
-    assert "Late job" in body                  # outstanding work list
-    assert "overdue" in body and "Outstanding work" in body
-    assert "Daily reports filed" in body and "50%" in body
+def _task_id(body: str) -> str:
+    return body.split('name="id" value="')[1].split('"')[0]
 
 
-def test_worker_submit_form_is_locked_to_their_team(server):
-    _, body = worker(server).get(f"/submit?date={DAY}")
-    assert "Daily team report" in body
-    assert 'value="t1"' in body       # hidden field carries their team
-    assert "<select id=\"team\"" not in body
-    assert 'value="Aki"' in body      # name prefilled from sign-in
+def test_updates_assemble_the_managers_report(server):
+    m = manager(server, name="Derek")
+    _, body = m.post("/tasks", {"action": "add", "title": "Chase carrier on SHPX-9920",
+                                "team_id": "t1", "due_date": "2999-01-01"})
+    id_chase = _task_id(body)
+    _, body = m.post("/tasks", {"action": "add", "title": "Upload BLs for LIDL batch",
+                                "team_id": "t1"})
+    all_ids = set(re.findall(r'name="id" value="([0-9a-f]+)"', body))
+    id_upload = next(i for i in all_ids if i != id_chase)
 
+    # The lead sees today's tasks, from Derek...
+    w = worker(server, team="t1", name="Wei L.")
+    _, body = w.get("/me")
+    assert "Today's tasks" in body
+    assert "from Derek" in body
+    assert "Chase carrier on SHPX-9920" in body
+    assert "What you did (optional)" in body
+    assert "Hit friction" in body and "Lack of coordination" in body
 
-def test_full_submission_flow(server):
-    w = worker(server)
-    # The team lead submits through the web form and lands on My day...
-    status, body = w.post("/submit", {
-        "date": DAY, "by": "Aki",
-        "metric_sla_attainment": "91",
-        "accomplished": "Held the line",
-        "blockers": "Need two more drivers",
-        "plan": "SLA recovery",
+    # ...and submits one combined update.
+    _, body = w.post("/updates", {
+        "tid": [id_chase, id_upload],
+        f"status_{id_chase}": "doing",
+        f"note_{id_chase}": "Follow-up sent, waiting on confirmation by EOD",
+        f"friction_{id_chase}": "friction",
+        f"reason_{id_chase}": "external",
+        f"channel_{id_chase}": "email",
+        f"status_{id_upload}": "done",
+        f"note_{id_upload}": "all 12 uploaded, 1 waiting on shipper",
+        f"friction_{id_upload}": "fine",
     })
-    assert status == 200
-    assert "Report sent to your manager" in body
-    assert "filed ✓" in body
-    assert "today's performance" in body    # the after-report dashboard
-    assert "SLA Attainment" in body
+    assert "Updates sent" in body
+    assert "1 of 2 done" in body
 
-    # ...the manager's dashboard shows Team One reported, Team Two silent...
+    # The manager's report assembled itself.
+    _, dash = m.get("/")
+    assert "Today's report" in dash
+    assert "Wei L." in dash and "1 done · 1 in progress" in dash
+    assert "all 12 uploaded, 1 waiting on shipper" in dash
+    assert "Follow-up sent, waiting on confirmation by EOD" in dash
+    assert "in Email" in dash
+    assert "Waiting on external" in dash
+    assert "1 of 2 on track" in dash          # t2 has no updates
+    assert "no updates yet" in dash           # t2's roster row
+
+    # And the printable sheet has the same, plus the friction table.
+    _, sheet = m.get("/sheet")
+    assert "DAILY STATUS REPORT" in sheet
+    assert "all 12 uploaded, 1 waiting on shipper" in sheet
+    assert "Waiting on external" in sheet
+    assert "No updates from: Team Two" in sheet
+
+
+def test_updates_only_touch_own_visible_tasks(server):
     m = manager(server)
-    _, dash = m.get(f"/?date={DAY}")
-    assert "Daily work completion" in dash
-    assert "1 of 2 on track" in dash
-    assert "no report yet" in dash              # Team Two
+    _, body = m.post("/tasks", {"action": "add", "title": "Other group job",
+                                "team_id": "t2"})
+    other_id = _task_id(body)
 
-    # ...and the full words are on the daily sheet.
-    _, sheet = m.get(f"/sheet?date={DAY}")
-    assert "Held the line" in sheet
-    assert "Need two more drivers" in sheet
-
-    # JSON endpoint stays open for other systems.
-    with urllib.request.urlopen(f"{server}/report.json?date={DAY}") as resp:
-        data = json.loads(resp.read().decode())
-    assert data["regions"][0]["teams"][0]["report"]["accomplished"] == "Held the line"
-    assert [t["team_id"] for t in data["awaiting_reports"]] == ["t2"]
-
-
-def test_worker_cannot_file_for_another_team(server):
-    w = worker(server, team="t1")
-    w.post("/submit", {"date": DAY, "team": "t2", "accomplished": "Sneaky"})
-    with urllib.request.urlopen(f"{server}/report.json?date={DAY}") as resp:
-        data = json.loads(resp.read().decode())
-    # Filed under t1 despite the forged form field; t2 still awaited.
-    assert [t["team_id"] for t in data["awaiting_reports"]] == ["t2"]
-
-
-def test_form_prefills_existing_submission(server):
-    w = worker(server)
-    w.post("/submit", {"date": DAY, "metric_csat": "88", "accomplished": "Did things"})
-    _, body = w.get(f"/submit?date={DAY}")
-    assert "already filed a report today" in body
-    assert 'value="88"' in body
-    assert "Did things" in body
-
-
-def test_validation_errors_rerender_form(server):
-    m = manager(server)
-    _, body = m.post("/submit", {"team": "t1", "date": DAY, "metric_csat": "not-a-number"})
-    assert "needs a number" in body
-
-    _, body = m.post("/submit", {"team": "t1", "date": DAY})
-    assert "Nothing to send" in body
-
-    _, body = m.post("/submit", {"team": "", "date": DAY, "metric_csat": "90"})
-    assert "choose your team" in body
+    w = worker(server, team="t1", name="Aki")
+    _, body = w.post("/updates", {
+        "tid": [other_id],
+        f"status_{other_id}": "done",
+        f"note_{other_id}": "hax",
+    })
+    # Nothing recorded — the task is another group's.
+    _, dash = m.get("/")
+    assert "hax" not in dash
+    _, tasks_body = m.get("/tasks")
+    assert "Done" not in tasks_body.split("Other group job")[1].split("</tr>")[0]
 
 
 def test_bad_date_and_unknown_path(server):
@@ -280,11 +269,11 @@ def test_groups_management(server):
     # Its lead can sign in and sees an empty board.
     w = worker(server, team="it", name="Sofia K.")
     _, body = w.get("/me")
-    assert "Hello Sofia K." in body
+    assert "Sofia K." in body and "Nothing on your plate" in body
 
     # A worker can't touch /groups at all.
     _, body = w.post("/groups", {"action": "add", "name": "Rogue"})
-    assert "Hello" in body  # bounced to My day
+    assert "Today's tasks" in body  # bounced to My day
 
     # Removing the group also invalidates its lead's session.
     _, body = m.post("/groups", {"action": "delete", "id": "it"})
@@ -326,12 +315,12 @@ def test_task_lifecycle_over_http(server):
     _, body = w.post("/tasks", {
         "action": "status", "id": task_id, "status": "done", "back": "me",
     })
-    assert "Hello Aki" in body            # landed back on My day
-    assert "Ticked off today" in body
+    assert "Today's tasks" in body        # landed back on My day
 
-    # It shows up as a completed activity on the manager's sheet.
+    # The tick counts as an update, so it's on the manager's sheet.
     _, sheet = m.get("/sheet")
-    assert "Task completed" in sheet and "Quarterly fleet forecast" in sheet
+    assert "Quarterly fleet forecast" in sheet
+    assert "Groups updated:</b> 1 of 2" in sheet
 
     # Only the manager can delete.
     _, body = w.post("/tasks", {"action": "delete", "id": task_id})
@@ -380,17 +369,19 @@ def test_task_filters(server):
 # Calendar, sheet & history
 # ---------------------------------------------------------------------------
 
-def test_calendar_shows_task_deadlines_and_reports(server):
+def test_calendar_shows_task_deadlines_and_updates(server):
     m = manager(server)
-    m.post("/tasks", {"action": "add", "title": "Deadline task",
-                      "team_id": "t1", "due_date": "2026-07-15"})
-    worker(server).post("/submit", {"date": DAY, "metric_csat": "90"})
+    _, body = m.post("/tasks", {"action": "add", "title": "Deadline task",
+                                "team_id": "t1", "due_date": "2026-07-15"})
+    tid = _task_id(body)
+    HealthCheckHandler.state.tasks.record_update(tid, DAY, status="doing",
+                                                 note="started")
 
     status, body = m.get("/calendar?month=2026-07")
     assert status == 200
     assert "July 2026" in body
     assert "Deadline task" in body
-    assert f"/sheet?date={DAY}" in body  # filed report links to the sheet
+    assert f"/sheet?date={DAY}" in body  # the update day links to the sheet
 
     # The worker's calendar shows their deadline but no manager sheet links.
     _, wbody = worker(server).get("/calendar?month=2026-07")
@@ -402,29 +393,32 @@ def test_calendar_shows_task_deadlines_and_reports(server):
     assert e.value.code == 400
 
 
-def test_daily_sheet(server):
-    worker(server).post("/submit", {
-        "date": DAY, "metric_sla_attainment": "91",
-        "accomplished": "Cleared the backlog",
-        "blockers": "Two vans in the shop",
-        "plan": "Focus zone 2",
-    })
-    status, body = manager(server).get(f"/sheet?date={DAY}")
+def test_daily_sheet_for_a_past_day(server):
+    m = manager(server)
+    _, body = m.post("/tasks", {"action": "add", "title": "Yesterday job",
+                                "team_id": "t1"})
+    tid = _task_id(body)
+    HealthCheckHandler.state.tasks.record_update(
+        tid, DAY, status="done", note="wrapped it up",
+        friction="system", friction_note="portal was down", channel="teams")
+
+    status, body = m.get(f"/sheet?date={DAY}")
     assert status == 200
     assert "DAILY STATUS REPORT" in body
-    assert "Performance dashboard" in body
-    assert "Cleared the backlog" in body        # completed activities
-    assert "Two vans in the shop" in body       # issues & escalations
-    assert "Focus zone 2" in body               # today's objectives
-    assert "Still awaiting reports" in body     # t2 hasn't filed
+    assert "wrapped it up" in body
+    assert "System issue" in body and "portal was down" in body
+    assert "in Teams" in body
 
 
 def test_history_and_consolidated_report(server):
-    w = worker(server)
-    w.post("/submit", {"date": "2026-07-07", "accomplished": "Monday things"})
-    w.post("/submit", {"date": DAY, "accomplished": "Tuesday things"})
-
     m = manager(server)
+    _, body = m.post("/tasks", {"action": "add", "title": "Recurring job",
+                                "team_id": "t1"})
+    tid = _task_id(body)
+    store = HealthCheckHandler.state.tasks
+    store.record_update(tid, "2026-07-07", status="doing", note="Monday things")
+    store.record_update(tid, DAY, status="done", note="Tuesday things")
+
     status, body = m.get("/history")
     assert status == 200
     assert "Saved reports" in body and "Consolidated report" in body

@@ -29,6 +29,25 @@ STATUSES = {
 
 OPEN_STATUSES = ("todo", "doing", "waiting")
 
+# When a group lead updates a task they can flag friction — these are the
+# reasons the manager sees rolled up in the assembled daily report.
+FRICTION_REASONS = {
+    "coordination": "Lack of coordination",
+    "time": "Not enough time",
+    "external": "Waiting on external",
+    "scope": "Unclear scope",
+    "system": "System issue",
+    "other": "Other",
+}
+
+# Where the work currently lives, so the manager knows where to look.
+CHANNELS = {
+    "email": "Email",
+    "smartmoov": "SmartMOOV",
+    "teams": "Teams",
+    "note": "Note",
+}
+
 # Due-date buckets, Trello-style: Complete / Overdue / Due soon / Due later /
 # No due date. "Due soon" means within the next 3 days (inclusive).
 DUE_SOON_DAYS = 3
@@ -72,6 +91,21 @@ def due_counts(tasks: list, today: str) -> dict:
 
 def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+
+def update_for_day(task: dict, day: str) -> dict | None:
+    """The update a group filed on this task for ``day``, if any."""
+    upd = (task.get("updates") or {}).get(day)
+    return upd if isinstance(upd, dict) else None
+
+
+def updated_days(tasks: list) -> dict:
+    """Map ``YYYY-MM-DD`` -> number of task updates filed that day."""
+    out: dict = {}
+    for t in tasks:
+        for day in (t.get("updates") or {}):
+            out[day] = out.get(day, 0) + 1
+    return out
 
 
 class TaskStore:
@@ -152,6 +186,48 @@ class TaskStore:
                         t["completed_on"] = datetime.now(timezone.utc).strftime("%Y-%m-%d")
                     elif not now_done:
                         t["completed_on"] = ""
+                    self._save(tasks)
+                    return t
+        return None
+
+    def record_update(self, task_id: str, day: str, status: str = "",
+                      note: str = "", friction: str = "",
+                      friction_note: str = "", channel: str = "",
+                      by: str = "") -> dict | None:
+        """A group lead's daily update on one task.
+
+        Sets the task's status (if given) and stores the day's update —
+        note, friction, channel — under ``task["updates"][day]``, which is
+        what the manager's assembled report reads. Returns the task, or
+        None if it doesn't exist.
+        """
+        if status and status not in STATUSES:
+            raise ValueError(f"Unknown status {status!r}.")
+        if friction and friction not in FRICTION_REASONS:
+            raise ValueError(f"Unknown friction reason {friction!r}.")
+        if channel and channel not in CHANNELS:
+            raise ValueError(f"Unknown channel {channel!r}.")
+        with self._lock:
+            tasks = self.load()
+            for t in tasks:
+                if t["id"] == task_id:
+                    if status:
+                        was_done = t.get("status") == "done"
+                        t["status"] = status
+                        if status == "done" and not was_done:
+                            t["completed_on"] = day
+                        elif status != "done":
+                            t["completed_on"] = ""
+                    t.setdefault("updates", {})[day] = {
+                        "status": t.get("status", "todo"),
+                        "note": note.strip(),
+                        "friction": friction,
+                        "friction_note": friction_note.strip(),
+                        "channel": channel,
+                        "by": by.strip(),
+                        "at": _now(),
+                    }
+                    t["updated_at"] = _now()
                     self._save(tasks)
                     return t
         return None

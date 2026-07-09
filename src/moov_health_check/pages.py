@@ -180,7 +180,7 @@ def nav(active: str, day: str, user: dict | None = None) -> str:
         ]
         who = esc(user.get("name") or user.get("team_name") or "Team")
         chip = f'<span class="role-chip worker" style="margin-left:auto">Team · {who}</span>'
-        primary = f'<a class="primary" href="/submit?date={d}">📝 File my report</a>'
+        primary = ""
     else:
         return ""
     out = ['<nav class="topnav">']
@@ -553,96 +553,47 @@ _SHEET_CSS = """
 """
 
 
-def sheet_page(report, tasks: list, day: str, roster: dict,
-               user: dict | None = None) -> str:
-    team_names = {tid: info.get("team_name", tid) for tid, info in roster.items()}
-    teams = report.teams
-    reported = len(teams)
-    expected = reported + len(report.missing_teams)
+def sheet_page(stats: dict, day: str, user: dict | None = None) -> str:
+    """The printable daily status report — assembled from the groups' updates."""
+    tiles = stats["tiles"]
 
-    active_tasks = [t for t in tasks if t.get("status") != "canceled"]
-    done_tasks = [t for t in active_tasks if t.get("status") == "done"]
-    completion = round(100 * len(done_tasks) / len(active_tasks)) if active_tasks else None
-    done_today = [t for t in done_tasks if t.get("completed_on") == day]
-    blockers = [(t.team_name, t.snapshot.blockers, t.status)
-                for t in teams if t.snapshot.blockers]
-
-    def tile(value, label, sub="", sub_color="#1e8449"):
-        s = f'<div class="s" style="color:{sub_color}">{esc(sub)}</div>' if sub else ""
-        return (f'<div class="tile"><div class="v">{value}</div>'
+    def tile(value, label, sub="", color="#10314f"):
+        s = f'<div class="s">{esc(sub)}</div>' if sub else ""
+        return (f'<div class="tile"><div class="v" style="color:{color}">{value}</div>'
                 f'<div class="k">{esc(label)}</div>{s}</div>')
 
-    tiles = [
-        tile(f"{report.overall_score:g}", "Fleet score /100",
-             {"green": "healthy", "amber": "watch", "red": "at risk", "unknown": "no data"}[report.overall_status.value],
-             {"green": "#1e8449", "amber": "#b9770e", "red": "#c0392b", "unknown": "#7c8a97"}[report.overall_status.value]),
-        tile(f"{reported}/{expected or reported}", "Teams reported"),
-        tile(f"{completion}%" if completion is not None else "—", "Task completion",
-             f"{len(done_today)} done today" if done_today else ""),
-        tile(str(len(blockers)), "Blockers raised",
-             "needs attention" if blockers else "all clear",
-             "#c0392b" if blockers else "#1e8449"),
-    ]
+    tiles_html = "".join([
+        tile(stats["done_today"], "Done today", "", "#1e8449"),
+        tile(tiles["pending"], "Still pending", "within deadline"),
+        tile(tiles["overdue"], "Overdue", "past deadline",
+             "#c0392b" if tiles["overdue"] else "#1e8449"),
+        tile(stats["friction_n"], "Friction flags", "raised by the groups",
+             "#b9770e" if stats["friction_n"] else "#1e8449"),
+    ])
 
-    key_update = ""
-    if report.focus_items:
-        top = report.focus_items[0]
-        key_update = (f'<div class="keyupdate"><b>Key update:</b> {esc(top.headline)} — '
-                      f'{esc(top.detail)}</div>')
-    elif teams:
-        key_update = ('<div class="keyupdate"><b>Key update:</b> All reported metrics '
-                      "are on target today. Steady as she goes.</div>")
-
-    # Completed activities — what each team said it got done.
-    completed = [
-        f"<li><b>{esc(t.team_name)}</b> — {esc(t.snapshot.accomplished)}</li>"
-        for t in teams if t.snapshot.accomplished
-    ] + [
-        f'<li>✔ Task completed: <b>{esc(t.get("title", ""))}</b>'
-        f'{" — " + esc(team_names.get(t.get("team_id", ""), t.get("assignee", ""))) if t.get("team_id") or t.get("assignee") else ""}</li>'
-        for t in done_today
-    ]
-    completed_html = "".join(completed) or '<li class="muted">Nothing reported yet.</li>'
-
-    # In-progress — open tasks with owner / status / due date.
-    open_tasks = sorted(
-        (t for t in tasks if t.get("status") in tasks_mod.OPEN_STATUSES),
-        key=lambda t: t.get("due_date") or "9999-99-99",
-    )
-    prog_rows = []
-    for t in open_tasks:
-        owner = t.get("assignee") or team_names.get(t.get("team_id", ""), "") or "—"
-        overdue = t.get("due_date") and t["due_date"] < day
-        due = esc(t.get("due_date") or "—")
-        if overdue:
-            due = f'<span class="sev sev-high">{due}</span>'
-        prog_rows.append(
-            f'<tr><td>{esc(t.get("title", ""))}</td><td>{esc(owner)}</td>'
-            f'<td>{esc(tasks_mod.STATUSES.get(t.get("status", ""), ""))}</td><td>{due}</td></tr>'
+    friction_rows = []
+    for f in stats["friction_items"]:
+        friction_rows.append(
+            f'<tr><td>{esc(f["group"])}</td><td>{esc(f["title"])}</td>'
+            f'<td><span class="sev sev-medium">{esc(f["reason"])}</span></td>'
+            f'<td>{esc(f["note"]) or "<span class=muted>—</span>"}</td></tr>'
         )
-    prog_html = "".join(prog_rows) or '<tr><td colspan="4" class="muted">No open tasks.</td></tr>'
+    friction_html = ("".join(friction_rows) or
+                     '<tr><td colspan="4" class="muted">No friction reported. 🎉</td></tr>')
 
-    # Issues & escalations — blockers, severity from the team's health status.
-    sev_map = {Status.RED: ("High", "sev-high"), Status.AMBER: ("Medium", "sev-medium")}
-    issue_rows = []
-    for name, text, status in blockers:
-        sev, cls = sev_map.get(status, ("Low", "sev-low"))
-        issue_rows.append(
-            f'<tr><td>{esc(name)}</td><td>{esc(text)}</td>'
-            f'<td><span class="sev {cls}">{sev}</span></td></tr>'
+    out_rows = []
+    for o in stats["outstanding"]:
+        color = {0: "#1e8449", 1: "#b9770e", 2: "#c0392b"}[o["level"]]
+        out_rows.append(
+            f'<tr><td>{esc(o["title"])}</td><td>{esc(o["group"])}</td>'
+            f'<td style="color:{color};font-weight:600">{esc(o["note"])}</td></tr>'
         )
-    issues_html = "".join(issue_rows) or '<tr><td colspan="3" class="muted">No blockers raised. 🎉</td></tr>'
-
-    objectives = [
-        f"<li><b>{esc(t.team_name)}</b> — {esc(t.snapshot.plan)}</li>"
-        for t in teams if t.snapshot.plan
-    ]
-    objectives_html = "".join(objectives) or '<li class="muted">No plans filed yet.</li>'
+    out_html = "".join(out_rows) or '<tr><td colspan="3" class="muted">No open tasks.</td></tr>'
 
     awaiting = ""
-    if report.missing_teams:
-        names = ", ".join(esc(t.get("team_name", t.get("team_id", "?"))) for t in report.missing_teams)
-        awaiting = f'<p class="muted" style="font-size:13px">⚠ Still awaiting reports from: {names}</p>'
+    if stats["silent_groups"]:
+        awaiting = (f'<p class="muted" style="font-size:13px">⚠ No updates from: '
+                    f'{esc(", ".join(stats["silent_groups"]))}</p>')
 
     body = f"""<div class="filters">
   <a href="/sheet?date={_shift(day, -1)}">← {_shift(day, -1)}</a>
@@ -652,32 +603,31 @@ def sheet_page(report, tasks: list, day: str, roster: dict,
 <div class="sheet">
   <div class="sheet-head">
     <h1>DAILY STATUS REPORT</h1>
-    <div class="sheet-meta"><span>MOOV Operations — all hubs</span>
-      <span><b>Date:</b> {esc(day)} &nbsp; · &nbsp; <b>Generated:</b> {esc(report.generated_at)}</span></div>
+    <div class="sheet-meta"><span>Assembled from the groups' task updates</span>
+      <span><b>Date:</b> {esc(day)} &nbsp; · &nbsp; <b>Generated:</b> {esc(stats['generated_at'])}</span></div>
   </div>
   <div class="sheet-band">
-    <span><b>Teams:</b> {reported} reported{f" / {expected} expected" if expected else ""}</span>
-    <span><b>Fleet:</b> {esc(report.overall_status.value.upper())}</span>
-    <span><b>Open tasks:</b> {len(open_tasks)}</span>
+    <span><b>Groups updated:</b> {stats['updated_groups']} of {stats['groups_total']}</span>
+    <span><b>Updates:</b> {stats['updates_n']}</span>
+    <span><b>Open tasks:</b> {tiles['pending'] + tiles['overdue'] + tiles['blocked']}</span>
   </div>
   <div class="sheet-body">
     <h2>Performance dashboard</h2>
-    <div class="tiles">{''.join(tiles)}</div>
-    {key_update}
-    <h2>Completed activities</h2>
-    <ul>{completed_html}</ul>
-    <h2>In-progress activities</h2>
-    <table><thead><tr><th>Activity</th><th>Owner</th><th>Status</th><th>Due date</th></tr></thead>
-    <tbody>{prog_html}</tbody></table>
-    <h2>Issues &amp; escalations</h2>
-    <table><thead><tr><th>Team</th><th>Description</th><th>Severity</th></tr></thead>
-    <tbody>{issues_html}</tbody></table>
-    <h2>Today's objectives</h2>
-    <ul>{objectives_html}</ul>
+    <div class="tiles">{tiles_html}</div>
+    <h2>Group updates</h2>
+    {group_report_cards(stats['group_reports'], [])}
+    <h2>Friction &amp; escalations</h2>
+    <table><thead><tr><th>Group</th><th>Task</th><th>Reason</th><th>Detail</th></tr></thead>
+    <tbody>{friction_html}</tbody></table>
+    <h2>Outstanding work</h2>
+    <table><thead><tr><th>Activity</th><th>Owner</th><th>Status</th></tr></thead>
+    <tbody>{out_html}</tbody></table>
     {awaiting}
   </div>
 </div>"""
-    return shell(f"Daily sheet — {day}", "sheet", day, body, extra_css=_SHEET_CSS,
+    return shell(f"Daily sheet — {day}", "sheet", day, body,
+                 extra_css=_SHEET_CSS + _REPORT_CSS +
+                 ".sheet .repline{border-color:#e4e9ee}.sheet .repline .note{color:#5a6b7c}",
                  user=user)
 
 
@@ -689,62 +639,70 @@ def _shift(day: str, delta: int) -> str:
 # /history — saved & consolidated reports
 # ---------------------------------------------------------------------------
 
-def history_page(reports_by_day: dict, load_day, roster: dict, today: str,
+def history_page(tasks: list, roster: dict, today: str,
                  date_from: str = "", date_to: str = "",
                  user: dict | None = None) -> str:
-    """``load_day(date)`` -> list[TeamSnapshot] for that date (lazy loader)."""
-    expected = len(roster)
-    days = sorted(reports_by_day, reverse=True)
+    """Every day the groups have updated their work — the saved daily reports."""
+    team_names = {tid: info.get("team_name", tid) for tid, info in roster.items()}
+    by_day = tasks_mod.updated_days(tasks)
+    days = sorted(by_day, reverse=True)
     if date_from:
         days = [d for d in days if d >= date_from]
     if date_to:
         days = [d for d in days if d <= date_to]
-    shown_days = days[:60]  # keep the page bounded
+    days = days[:60]  # keep the page bounded
 
     cards = []
     consolidated = []
-    for d in shown_days:
-        snaps = load_day(d)
-        n = len(snaps)
-        n_blockers = sum(1 for s in snaps if s.blockers)
-        blocker_note = (f' · <span style="color:#d99513">{n_blockers} blocker(s)</span>'
-                        if n_blockers else "")
-        cards.append(f"""<li>
-<b><a href="/sheet?date={d}">{d}</a></b>
-<span class="muted"> — {n}{f"/{expected}" if expected else ""} teams reported{blocker_note}</span>
-<span style="float:right"><a href="/?date={d}">dashboard</a> · <a href="/sheet?date={d}">sheet</a></span>
-</li>""")
-        for s in snaps:
-            notes = " · ".join(x for x in (s.accomplished, s.plan) if x)
-            if len(notes) > 140:
-                notes = notes[:137] + "…"
-            block = f'<div style="color:#d99513;font-size:12px">⚠ {esc(s.blockers)}</div>' if s.blockers else ""
+    for d in days:
+        done_n = friction_n = 0
+        for t in tasks:
+            upd = tasks_mod.update_for_day(t, d)
+            if not upd:
+                continue
+            if upd.get("status") == "done":
+                done_n += 1
+            if upd.get("friction"):
+                friction_n += 1
+            group = team_names.get(t.get("team_id", ""), t.get("assignee", "")) or "—"
+            icon = "✓" if upd.get("status") == "done" else "🕓"
+            note = f' — {esc(upd["note"])}' if upd.get("note") else ""
+            fr = ""
+            if upd.get("friction"):
+                label = tasks_mod.FRICTION_REASONS.get(upd["friction"], upd["friction"])
+                detail = ": " + esc(upd["friction_note"]) if upd.get("friction_note") else ""
+                fr = f'<div style="color:#d99513;font-size:12px">⚠ {esc(label)}{detail}</div>'
             consolidated.append(
                 f'<tr><td class="muted" style="white-space:nowrap">{d}</td>'
-                f"<td>{esc(s.team_name)}</td>"
-                f'<td>{esc(notes) or "<span class=muted>—</span>"}{block}</td></tr>'
+                f'<td>{esc(group)}</td>'
+                f'<td>{icon} <b>{esc(t.get("title", ""))}</b>{note}{fr}</td></tr>'
             )
+        friction_note = (f' · <span style="color:#d99513">{friction_n} friction flag(s)</span>'
+                         if friction_n else "")
+        cards.append(f"""<div style="padding:8px 2px;border-bottom:1px solid #20242b">
+<b><a href="/sheet?date={d}">{d}</a></b>
+<span class="muted"> — {by_day[d]} update(s) · {done_n} done{friction_note}</span>
+<span style="float:right"><a href="/?date={d}">dashboard</a> · <a href="/sheet?date={d}">sheet</a></span>
+</div>""")
 
     if not cards:
-        cards.append('<li class="muted">No saved reports in this range yet.</li>')
+        cards.append('<div class="muted" style="padding:8px 2px">No saved reports in this range yet.</div>')
     if not consolidated:
         consolidated.append('<tr><td colspan="3" class="muted">Nothing to consolidate yet.</td></tr>')
 
     body = f"""<h1>🗂 Saved reports</h1>
-<div class="sub">Every day the teams have reported — browse back, or pull a consolidated view over a date range.</div>
+<div class="sub">Every day the groups have updated their work — browse back, or pull a consolidated view over a date range.</div>
 <form method="get" action="/history" class="filters">
   <label class="muted">Date from</label> <input type="date" name="from" value="{esc(date_from)}">
   <label class="muted">Date to</label> <input type="date" name="to" value="{esc(date_to)}">
   <button type="submit" class="ghost">Filter</button>
   {f'<a href="/history">clear</a>' if (date_from or date_to) else ''}
 </form>
-<div class="card"><ul style="list-style:none;margin:0;padding:0">
-{"".join(f'<div style="padding:8px 2px;border-bottom:1px solid #20242b">{c}</div>' for c in cards)}
-</ul></div>
+<div class="card">{''.join(cards)}</div>
 <h2>Consolidated report</h2>
 <div class="card" style="padding:0 8px">
-<table><thead><tr><th>Date</th><th>Team</th><th>Notes (done · plan)</th></tr></thead>
-<tbody>{"".join(consolidated)}</tbody></table></div>"""
+<table><thead><tr><th>Date</th><th>Group</th><th>Update</th></tr></thead>
+<tbody>{''.join(consolidated)}</tbody></table></div>"""
     return shell("Saved reports", "history", today, body, user=user)
 
 
@@ -787,8 +745,8 @@ def login_page(roster: dict, error: str = "") -> str:
   </div>
   <div class="card login-card worker">
     <h3>🧑‍🔧 I lead a group</h3>
-    <div class="desc">File your group's daily report, tick off your tasks,
-      and see how your group is doing today.</div>
+    <div class="desc">Swipe through today's tasks — Done or In progress, a note,
+      any friction. Your updates assemble into the boss's daily report.</div>
     {worker_form}
   </div>
 </div>
@@ -798,137 +756,142 @@ No passwords — this site is meant for a trusted office network or VPN.</p>"""
 
 
 # ---------------------------------------------------------------------------
-# /me — the team member's home: report, performance, tasks, deadlines
+# /me — the group lead's day: swipe through today's tasks, updates roll up
 # ---------------------------------------------------------------------------
 
-_HEALTH_COLORS = {
-    Status.GREEN: "#1e9e5a",
-    Status.AMBER: "#d99513",
-    Status.RED: "#d64545",
-    Status.UNKNOWN: "#8a8f98",
+_ME_CSS = """
+.tcard { border: 1px solid #262a31; border-radius: 12px; background: #171a21;
+  margin-bottom: 10px; overflow: hidden; }
+.tcard summary { list-style: none; cursor: pointer; display: flex; align-items: center;
+  gap: 10px; padding: 12px 14px; font-weight: 600; }
+.tcard summary::-webkit-details-marker { display: none; }
+.tcard summary .chev { margin-left: auto; color: #6b7078; transition: transform .15s; }
+.tcard[open] summary .chev { transform: rotate(180deg); }
+.tcard[open] { border-color: #3d4450; }
+.tbody { padding: 2px 14px 14px; }
+.tbody .q { font-size: 12px; color: #8a8f98; margin: 12px 0 6px; }
+.optrow input { position: absolute; opacity: 0; pointer-events: none; }
+.optchip { display: inline-block; padding: 7px 14px; margin: 0 6px 6px 0; cursor: pointer;
+  border: 1px solid #2c313a; border-radius: 9px; font-size: 13px; color: #b7bcc4; }
+.optchip:hover { border-color: #8ab4f8; }
+input:checked + .optchip { border-color: #8ab4f8; color: #8ab4f8; background: rgba(138,180,248,.1); }
+input:checked + .optchip.good { border-color: #1e9e5a; color: #1e9e5a; background: rgba(30,158,90,.15); }
+input:checked + .optchip.warn { border-color: #d99513; color: #d99513; background: rgba(217,149,19,.15); }
+input:focus-visible + .optchip { outline: 2px solid #8ab4f8; outline-offset: 1px; }
+.tbody input[type=text] { width: 100%; }
+.fr-detail { display: none; margin-top: 4px; }
+input.fr-yes:checked ~ .fr-detail { display: block; }
+.submitbar { position: sticky; bottom: 12px; margin-top: 16px; }
+.submitbar button { width: 100%; padding: 14px; font-size: 15px; border-radius: 11px; }
+@media (prefers-color-scheme: light) {
+  .tcard { background: #fff; border-color: #e3e6ea; }
+  .optchip { border-color: #d4d9df; color: #5a6068; background: #fff; }
 }
-_HEALTH_LABEL = {
-    Status.GREEN: "healthy",
-    Status.AMBER: "watch",
-    Status.RED: "at risk",
-    Status.UNKNOWN: "no data",
-}
+"""
 
 
-def me_page(user: dict, team_health, tasks: list, today: str,
-            submitted: bool = False) -> str:
-    """The worker's home. ``team_health`` is the team's TeamHealth if the
-    team has filed today's report, else None."""
-    name = user.get("name") or ""
-    team_name = user.get("team_name") or user.get("team_id") or "your team"
-    hello = f"Hello {esc(name)}" if name else f"Hello, {esc(team_name)}"
+def _update_card(t: dict, today: str, open_card: bool) -> str:
+    tid = esc(t["id"])
+    upd = tasks_mod.update_for_day(t, today) or {}
+    status = t.get("status", "todo")
+    checked_done = ' checked' if status == "done" else ""
+    checked_doing = ' checked' if status == "doing" else ""
+    friction_on = bool(upd.get("friction"))
+    due = t.get("due_date") or ""
+    due_note = ""
+    if due and status not in ("done", "canceled"):
+        if due < today:
+            due_note = f' <span class="overdue-date" style="font-size:12px">overdue · {esc(due)}</span>'
+        elif due == today:
+            due_note = ' <span class="muted" style="font-size:12px">due today</span>'
 
-    filed = team_health is not None
-    snap = team_health.snapshot if filed else None
-
-    # --- Card 1: today's report -----------------------------------------
-    if filed:
-        who = f" by {esc(snap.submitted_by)}" if snap.submitted_by else ""
-        when = f" at {esc(snap.submitted_at)}" if snap.submitted_at else ""
-        report_card = f"""<div class="card me-card ok">
-<h3>📝 Today's report — filed ✓</h3>
-<div class="sub" style="margin:0 0 8px">Sent to the manager{who}{when}.</div>
-<a href="/submit?date={esc(today)}&team={esc(user.get('team_id', ''))}">Review or correct it →</a>
-</div>"""
-    else:
-        report_card = f"""<div class="card me-card warn">
-<h3>📝 Today's report — not filed yet</h3>
-<div class="sub" style="margin:0 0 4px">Your manager is waiting on {esc(team_name)}.
-It takes about two minutes.</div>
-<a class="cta" href="/submit?date={esc(today)}">File today's report</a>
-</div>"""
-
-    # --- Card 2: performance after reporting ----------------------------
-    if filed:
-        color = _HEALTH_COLORS[team_health.status]
-        chips = "".join(
-            f'<span class="chip" style="border-color:{_HEALTH_COLORS[r.status]};'
-            f'color:{_HEALTH_COLORS[r.status]}">{esc(r.definition.label)} {esc(r.format_value())}</span>'
-            for r in team_health.readings if r.value is not None
-        ) or '<span class="muted">No numbers reported today.</span>'
-        perf_card = f"""<div class="card me-card" style="border-left-color:{color}">
-<h3>📈 {esc(team_name)} — today's performance</h3>
-<div class="bigscore" style="color:{color}">{team_health.score:g}<small>/100 · {_HEALTH_LABEL[team_health.status]}</small></div>
-<div class="metric-chips">{chips}</div>
-</div>"""
-    else:
-        perf_card = """<div class="card me-card">
-<h3>📈 Today's performance</h3>
-<div class="sub" style="margin:0">File your report and your team's daily
-performance dashboard appears here.</div>
-</div>"""
-
-    # --- Card 3: my tasks -------------------------------------------------
-    my_tasks = visible_tasks(tasks, user)
-    open_tasks = sorted(
-        (t for t in my_tasks if t.get("status") in tasks_mod.OPEN_STATUSES),
-        key=lambda t: t.get("due_date") or "9999-99-99",
-    )
-    done_today = [t for t in my_tasks
-                  if t.get("status") == "done" and t.get("completed_on") == today]
-    rows = []
-    for t in open_tasks:
-        tid = esc(t["id"])
-        bucket = tasks_mod.due_bucket(t, today)
-        due = esc(t.get("due_date") or "—")
-        if bucket == "overdue":
-            due = f'<span class="overdue-date">{due}</span>'
-        opts = "".join(
-            f'<option value="{k}"{" selected" if t.get("status") == k else ""}>{v}</option>'
-            for k, v in tasks_mod.STATUSES.items() if k != "canceled"
+    reasons = []
+    for key, label in tasks_mod.FRICTION_REASONS.items():
+        rc = ' checked' if upd.get("friction") == key else ""
+        reasons.append(
+            f'<input type="radio" id="rs_{tid}_{key}" name="reason_{tid}" value="{key}"{rc}>'
+            f'<label class="optchip" for="rs_{tid}_{key}">{label}</label>'
         )
-        rows.append(f"""<tr>
-<td><b>{esc(t.get('title', ''))}</b></td>
-<td>{status_chip(t.get('status', 'todo'))}</td>
-<td>{due}</td>
-<td><div class="rowform">
-  <form method="post" action="/tasks" class="rowform">
-    <input type="hidden" name="action" value="status">
-    <input type="hidden" name="id" value="{tid}">
-    <input type="hidden" name="back" value="me">
-    <select name="status">{opts}</select>
-    <button type="submit" class="ghost">Save</button>
-  </form>
-  <form method="post" action="/tasks" class="rowform">
-    <input type="hidden" name="action" value="status">
-    <input type="hidden" name="id" value="{tid}">
-    <input type="hidden" name="status" value="done">
-    <input type="hidden" name="back" value="me">
-    <button type="submit">✓ Done</button>
-  </form>
-</div></td></tr>""")
-    if not rows:
-        rows.append('<tr><td colspan="4" class="muted">Nothing on your plate — '
-                    'no open tasks assigned to you. 🎉</td></tr>')
-    done_note = ""
-    if done_today:
-        done_note = (f'<div class="sub" style="margin:8px 0 0">🎉 Ticked off today: '
-                     + ", ".join(f"<b>{esc(t.get('title', ''))}</b>" for t in done_today)
-                     + "</div>")
+    channels = []
+    for key, label in tasks_mod.CHANNELS.items():
+        cc = ' checked' if upd.get("channel") == key else ""
+        channels.append(
+            f'<input type="radio" id="ch_{tid}_{key}" name="channel_{tid}" value="{key}"{cc}>'
+            f'<label class="optchip" for="ch_{tid}_{key}">{label}</label>'
+        )
 
-    toast_html = ('<div class="toast">✓ Report sent to your manager. '
-                  "Here's your day.</div>") if submitted else ""
-
-    body = f"""<h1>🏠 {hello} — {esc(today)}</h1>
-<div class="sub">Your day at a glance: report in, tasks ticked, performance up.</div>
-{toast_html}
-<div class="grid2">
-{report_card}
-{perf_card}
+    return f"""<details class="tcard"{' open' if open_card else ''}>
+<summary>{status_chip(status)} <span>{esc(t.get('title', ''))}</span>{due_note}
+  <span class="chev">▾</span></summary>
+<div class="tbody optrow">
+  <input type="hidden" name="tid" value="{tid}">
+  <div class="q">Status</div>
+  <input type="radio" id="st_{tid}_done" name="status_{tid}" value="done"{checked_done}>
+  <label class="optchip good" for="st_{tid}_done">✓ Done</label>
+  <input type="radio" id="st_{tid}_doing" name="status_{tid}" value="doing"{checked_doing}>
+  <label class="optchip" for="st_{tid}_doing">In progress</label>
+  <input type="text" name="note_{tid}" value="{esc(upd.get('note', ''))}"
+    placeholder="What you did (optional)">
+  <div class="q">Any friction?</div>
+  <input type="radio" id="fr_{tid}_n" name="friction_{tid}" value="fine"{'' if friction_on else ' checked'}>
+  <label class="optchip good" for="fr_{tid}_n">Went fine</label>
+  <input type="radio" id="fr_{tid}_y" class="fr-yes" name="friction_{tid}" value="friction"{' checked' if friction_on else ''}>
+  <label class="optchip warn" for="fr_{tid}_y">Hit friction</label>
+  <div class="fr-detail">
+    <div class="q">What got in the way?</div>
+    {''.join(reasons)}
+    <input type="text" name="fdetail_{tid}" value="{esc(upd.get('friction_note', ''))}"
+      placeholder="Explain (only if none fit)">
+  </div>
+  <div class="q">Where's it at?</div>
+  {''.join(channels)}
 </div>
-<h2>✅ My open tasks</h2>
-<div class="card" style="padding:0 8px">
-<table>
-<thead><tr><th>Task</th><th>Status</th><th>Due</th><th>Update</th></tr></thead>
-<tbody>{''.join(rows)}</tbody>
-</table></div>
-{done_note}"""
-    return shell("My day", "me", today, body, user=user)
+</details>"""
+
+
+def me_page(user: dict, tasks: list, today: str, sent: int = 0) -> str:
+    name = user.get("name") or ""
+    team_name = user.get("team_name") or user.get("team_id") or "your group"
+
+    mine = visible_tasks(tasks, user)
+    todays = sorted(
+        (t for t in mine
+         if t.get("status") in tasks_mod.OPEN_STATUSES
+         or (t.get("status") == "done" and t.get("completed_on") == today)),
+        key=lambda t: (t.get("status") == "done", t.get("due_date") or "9999-99-99"),
+    )
+    boss = next((t.get("created_by") for t in todays if t.get("created_by")), "")
+    frm = f"from {esc(boss)} · " if boss else ""
+    done_n = sum(1 for t in todays if t.get("status") == "done")
+
+    toast = ""
+    if sent:
+        toast = (f'<div class="toast">✓ Updates sent — {done_n} of {len(todays)} done. '
+                 "Your boss sees them assemble into today's report.</div>")
+
+    if todays:
+        first_open = True
+        cards = []
+        for t in todays:
+            is_open = t.get("status") != "done" and first_open
+            if is_open:
+                first_open = False
+            cards.append(_update_card(t, today, is_open))
+        form = f"""<form method="post" action="/updates">
+{''.join(cards)}
+<div class="submitbar"><button type="submit">Submit · {done_n} of {len(todays)} done</button></div>
+</form>"""
+    else:
+        form = ('<div class="card" style="text-align:center;padding:40px">'
+                '<h3>Nothing on your plate</h3><div class="sub" style="margin:0">'
+                "No open tasks assigned to you — your board is clear. 🎉</div></div>")
+
+    hello = esc(name) if name else esc(team_name)
+    body = f"""<h1>Today's tasks</h1>
+<div class="sub">{frm}{len(todays)} task(s) · update each one — takes about a minute, {hello}.</div>
+{toast}
+{form}"""
+    return shell("My day", "me", today, body, extra_css=_ME_CSS, user=user)
 
 
 # ---------------------------------------------------------------------------
@@ -977,6 +940,59 @@ _DASH_CSS = """
 """
 
 _LEVEL_COLOR = {0: "#1e9e5a", 1: "#d99513", 2: "#d64545"}
+
+_REPORT_CSS = """
+.rep-head { display: flex; align-items: center; gap: 10px; margin: 16px 0 4px; }
+.rep-head:first-child { margin-top: 4px; }
+.rep-head .who { font-weight: 700; }
+.rep-head .cnt { color: #8a8f98; font-size: 12px; }
+.repline { padding: 7px 2px; border-bottom: 1px solid #20242b; font-size: 14px; }
+.repline:last-child { border-bottom: 0; }
+.repline .note { color: #9aa0a8; }
+.rep-chip { display: inline-block; border: 1px solid; border-radius: 20px;
+  padding: 0 8px; font-size: 11px; font-weight: 600; white-space: nowrap; margin-left: 4px; }
+@media (prefers-color-scheme: light) { .repline { border-color: #eceef1; } }
+"""
+
+
+def group_report_cards(group_reports: list, silent: list) -> str:
+    """The manager's report, assembled from the groups' task updates."""
+    out = []
+    for g in group_reports:
+        counts = []
+        if g["done_n"]:
+            counts.append(f'{g["done_n"]} done')
+        if g["prog_n"]:
+            counts.append(f'{g["prog_n"]} in progress')
+        color = _LEVEL_COLOR[1 if g["friction_n"] else 0]
+        who = g["lead"] or g["name"]
+        out.append(
+            f'<div class="rep-head"><span class="avatar" style="width:30px;height:30px;'
+            f'font-size:11px;background:{color}">{esc(_initials(who))}</span>'
+            f'<span class="who">{esc(who)}</span>'
+            f'<span class="cnt">{esc(g["name"])} · {" · ".join(counts) or "updated"}</span></div>'
+        )
+        for it in g["items"]:
+            icon = ('<span style="color:#1e9e5a">✓</span>' if it["level"] == 0
+                    else '<span style="color:#d99513">🕓</span>')
+            note = f' <span class="note">— {esc(it["note"])}</span>' if it["note"] else ""
+            chips = ""
+            if it["channel"]:
+                chips += (f'<span class="rep-chip" style="border-color:#8ab4f8;'
+                          f'color:#8ab4f8">in {esc(it["channel"])}</span>')
+            if it["friction"]:
+                fr = esc(it["friction"])
+                if it["friction_note"]:
+                    fr += f": {esc(it['friction_note'])}"
+                chips += (f'<span class="rep-chip" style="border-color:#d99513;'
+                          f'color:#d99513">⚠ {fr}</span>')
+            out.append(f'<div class="repline">{icon} <b>{esc(it["title"])}</b>{note}{chips}</div>')
+    if silent:
+        out.append(f'<div class="muted" style="margin-top:12px;font-size:13px">'
+                   f'⚠ No updates yet from: {esc(", ".join(silent))}</div>')
+    if not out:
+        out.append('<div class="muted">No updates yet today.</div>')
+    return "".join(out)
 
 
 def _initials(name: str) -> str:
@@ -1037,7 +1053,7 @@ def completion_dashboard(stats: dict, day: str, user: dict | None = None,
             cls = "bad" if r["level"] == 2 else "warn"
             sub_bits.append(f'<span class="{cls}">{r["overdue"]} overdue</span>')
         if not r["filed"]:
-            sub_bits.append('<span class="warn">no report yet</span>')
+            sub_bits.append('<span class="warn">no updates yet</span>')
         if r["last"]:
             sub_bits.append(f'last activity {esc(r["last"])}')
         elif not r["filed"]:
@@ -1085,6 +1101,9 @@ def completion_dashboard(stats: dict, day: str, user: dict | None = None,
 <div class="card"><h3>Team roster</h3>
 {''.join(rows)}
 </div>
+<div class="card"><h3>Today's report <span class="muted">· assembles itself from the groups' updates</span></h3>
+{group_report_cards(stats["group_reports"], stats["silent_groups"])}
+</div>
 <div class="grid2">
 <div class="card"><h3>Outstanding work</h3><ul class="worklist">{outstanding_html}</ul></div>
 <div class="card"><h3>Daily checklist · groups</h3><ul class="checklist">{''.join(checklist)}</ul></div>
@@ -1093,7 +1112,7 @@ def completion_dashboard(stats: dict, day: str, user: dict | None = None,
 &nbsp;·&nbsp; <a href="/?date={esc(stats['prev_day'])}">← {esc(stats['prev_day'])}</a>
 &nbsp; <a href="/?date={esc(stats['next_day'])}">{esc(stats['next_day'])} →</a></div>"""
     return shell("Daily work completion", "dashboard", day, body,
-                 extra_css=_DASH_CSS, user=user)
+                 extra_css=_DASH_CSS + _REPORT_CSS, user=user)
 
 
 # ---------------------------------------------------------------------------
