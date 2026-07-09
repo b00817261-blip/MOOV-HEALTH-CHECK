@@ -1,5 +1,5 @@
 """HTML pages for the website beyond the dashboard: tasks, calendar,
-the daily sheet, and the saved-reports history.
+and the saved-reports history.
 
 Everything here is plain string templating over the stdlib — no template
 engine, no JS framework, no external assets. Each builder returns a full
@@ -162,7 +162,6 @@ def nav(active: str, day: str, user: dict | None = None) -> str:
     if user and user.get("is_leader"):
         links = [
             ("dashboard", f"/?date={d}", "📊 Dashboard"),
-            ("sheet", f"/sheet?date={d}", "📄 Daily sheet"),
             ("tasks", "/tasks", "✅ Tasks"),
             ("calendar", f"/calendar?month={month}", "🗓 Calendar"),
             ("history", "/history", "🗂 Saved reports"),
@@ -494,9 +493,9 @@ def calendar_page(roster: dict, tasks: list, reports_by_day: dict,
             n_reports = reports_by_day.get(iso, 0)
             is_manager = (user or {}).get("role") != "worker"
             if is_manager:
-                rep = (f'<a class="rep" href="/sheet?date={iso}" title="{n_reports} team report(s) filed">'
+                rep = (f'<a class="rep" href="/?date={iso}" title="{n_reports} team report(s) filed">'
                        f'📋 {n_reports}</a>') if n_reports else ""
-                daynum = f'<a class="daynum" href="/sheet?date={iso}">{d.day}</a>'
+                daynum = f'<a class="daynum" href="/?date={iso}">{d.day}</a>'
             else:
                 rep = (f'<span class="rep" title="{n_reports} team report(s) filed">'
                        f'📋 {n_reports}</span>') if n_reports else ""
@@ -508,7 +507,7 @@ def calendar_page(roster: dict, tasks: list, reports_by_day: dict,
         f'<span class="chip" style="border-color:{c};color:{c}">{esc(tasks_mod.STATUSES[k])}</span>'
         for k, c in STATUS_COLORS.items()
     )
-    hint = ("Click a day to open its daily sheet."
+    hint = ("Click a day to open its dashboard."
             if (user or {}).get("role") != "worker"
             else "Your deadlines and the days your team reported.")
     body = f"""<h1>🗓 {esc(month_name)}</h1>
@@ -523,131 +522,6 @@ def calendar_page(roster: dict, tasks: list, reports_by_day: dict,
 <table class="cal"><thead><tr>{head}</tr></thead><tbody>{''.join(body_rows)}</tbody></table>
 </div>"""
     return shell(f"Calendar — {month_name}", "calendar", today, body, user=user)
-
-
-# ---------------------------------------------------------------------------
-# /sheet — the printable daily status report
-# ---------------------------------------------------------------------------
-
-_SHEET_CSS = """
-.sheet { background: #fff; color: #16212c; border-radius: 6px; overflow: hidden;
-  box-shadow: 0 2px 14px rgba(0,0,0,.35); margin-bottom: 24px; }
-.sheet-head { background: #10314f; color: #fff; padding: 22px 28px 16px; }
-.sheet-head h1 { color: #fff; font-size: 26px; letter-spacing: .5px; margin: 0; }
-.sheet-meta { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px;
-  font-size: 13px; margin-top: 4px; color: #c8d6e4; }
-.sheet-band { background: #1668a8; color: #fff; padding: 8px 28px; font-size: 13px;
-  display: flex; gap: 26px; flex-wrap: wrap; }
-.sheet-body { padding: 10px 28px 26px; }
-.sheet h2 { color: #10314f; font-size: 17px; text-transform: none; letter-spacing: 0;
-  border-bottom: 3px solid #10314f; padding-bottom: 4px; margin: 26px 0 12px; }
-.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
-.tile { border: 1px solid #d8dee5; text-align: center; padding: 16px 8px 12px; background: #fafbfc; }
-.tile .v { font-size: 26px; font-weight: 800; color: #10314f; }
-.tile .k { font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: #5a6b7c; margin-top: 2px; }
-.tile .s { font-size: 12px; margin-top: 2px; font-weight: 600; }
-.keyupdate { border-left: 5px solid #1668a8; background: #eaf2fa; padding: 10px 14px;
-  font-size: 14px; margin-top: 16px; color: #16212c; }
-.sheet ul { margin: 0; padding: 0; list-style: none; }
-.sheet ul li { padding: 7px 2px; border-bottom: 1px solid #e4e9ee; font-size: 14px; }
-.sheet table { font-size: 13px; }
-.sheet th { background: #10314f; color: #fff; letter-spacing: .5px; border: 0; }
-.sheet td { border-color: #e4e9ee; color: #16212c; }
-.sheet tr:nth-child(even) td { background: #f4f7fa; }
-.sev { font-weight: 700; }
-.sev-high { color: #c0392b; }
-.sev-medium { color: #b9770e; }
-.sev-low { color: #1e8449; }
-.sheet .muted { color: #7c8a97; }
-@media print {
-  .topnav, footer, .filters { display: none !important; }
-  body { background: #fff; }
-  .wrap { padding: 0; max-width: none; }
-  .sheet { box-shadow: none; border-radius: 0; }
-}
-"""
-
-
-def sheet_page(stats: dict, day: str, user: dict | None = None) -> str:
-    """The printable daily status report — assembled from the groups' updates."""
-    tiles = stats["tiles"]
-
-    def tile(value, label, sub="", color="#10314f"):
-        s = f'<div class="s">{esc(sub)}</div>' if sub else ""
-        return (f'<div class="tile"><div class="v" style="color:{color}">{value}</div>'
-                f'<div class="k">{esc(label)}</div>{s}</div>')
-
-    tiles_html = "".join([
-        tile(stats["done_today"], "Done today", "", "#1e8449"),
-        tile(tiles["pending"], "Still pending", "within deadline"),
-        tile(tiles["overdue"], "Overdue", "past deadline",
-             "#c0392b" if tiles["overdue"] else "#1e8449"),
-        tile(stats["friction_n"], "Friction flags", "raised by the groups",
-             "#b9770e" if stats["friction_n"] else "#1e8449"),
-    ])
-
-    friction_rows = []
-    for f in stats["friction_items"]:
-        friction_rows.append(
-            f'<tr><td>{esc(f["group"])}</td><td>{esc(f["title"])}</td>'
-            f'<td><span class="sev sev-medium">{esc(f["reason"])}</span></td>'
-            f'<td>{esc(f["note"]) or "<span class=muted>—</span>"}</td></tr>'
-        )
-    friction_html = ("".join(friction_rows) or
-                     '<tr><td colspan="4" class="muted">No friction reported. 🎉</td></tr>')
-
-    out_rows = []
-    for o in stats["outstanding"]:
-        color = {0: "#1e8449", 1: "#b9770e", 2: "#c0392b"}[o["level"]]
-        out_rows.append(
-            f'<tr><td>{esc(o["title"])}</td><td>{esc(o["group"])}</td>'
-            f'<td style="color:{color};font-weight:600">{esc(o["note"])}</td></tr>'
-        )
-    out_html = "".join(out_rows) or '<tr><td colspan="3" class="muted">No open tasks.</td></tr>'
-
-    awaiting = ""
-    if stats["silent_groups"]:
-        awaiting = (f'<p class="muted" style="font-size:13px">⚠ No updates from: '
-                    f'{esc(", ".join(stats["silent_groups"]))}</p>')
-
-    body = f"""<div class="filters">
-  <a href="/sheet?date={_shift(day, -1)}">← {_shift(day, -1)}</a>
-  <a href="/sheet?date={_shift(day, 1)}">{_shift(day, 1)} →</a>
-  <span class="muted">Tip: use your browser's Print to save this sheet as a PDF.</span>
-</div>
-<div class="sheet">
-  <div class="sheet-head">
-    <h1>DAILY STATUS REPORT</h1>
-    <div class="sheet-meta"><span>Assembled from the groups' task updates</span>
-      <span><b>Date:</b> {esc(day)} &nbsp; · &nbsp; <b>Generated:</b> {esc(stats['generated_at'])}</span></div>
-  </div>
-  <div class="sheet-band">
-    <span><b>Groups updated:</b> {stats['updated_groups']} of {stats['groups_total']}</span>
-    <span><b>Updates:</b> {stats['updates_n']}</span>
-    <span><b>Open tasks:</b> {tiles['pending'] + tiles['overdue'] + tiles['blocked']}</span>
-  </div>
-  <div class="sheet-body">
-    <h2>Performance dashboard</h2>
-    <div class="tiles">{tiles_html}</div>
-    <h2>Group updates</h2>
-    {group_report_cards(stats['group_reports'], [])}
-    <h2>Friction &amp; escalations</h2>
-    <table><thead><tr><th>Group</th><th>Task</th><th>Reason</th><th>Detail</th></tr></thead>
-    <tbody>{friction_html}</tbody></table>
-    <h2>Outstanding work</h2>
-    <table><thead><tr><th>Activity</th><th>Owner</th><th>Status</th></tr></thead>
-    <tbody>{out_html}</tbody></table>
-    {awaiting}
-  </div>
-</div>"""
-    return shell(f"Daily sheet — {day}", "sheet", day, body,
-                 extra_css=_SHEET_CSS + _REPORT_CSS +
-                 ".sheet .repline{border-color:#e4e9ee}.sheet .repline .note{color:#5a6b7c}",
-                 user=user)
-
-
-def _shift(day: str, delta: int) -> str:
-    return (date_cls.fromisoformat(day) + timedelta(days=delta)).isoformat()
 
 
 # ---------------------------------------------------------------------------
@@ -695,9 +569,9 @@ def history_page(tasks: list, roster: dict, today: str,
         friction_note = (f' · <span style="color:#d99513">{friction_n} friction flag(s)</span>'
                          if friction_n else "")
         cards.append(f"""<div style="padding:8px 2px;border-bottom:1px solid #20242b">
-<b><a href="/sheet?date={d}">{d}</a></b>
+<b><a href="/?date={d}">{d}</a></b>
 <span class="muted"> — {by_day[d]} update(s) · {done_n} done{friction_note}</span>
-<span style="float:right"><a href="/?date={d}">dashboard</a> · <a href="/sheet?date={d}">sheet</a></span>
+<span style="float:right"><a href="/?date={d}">dashboard</a></span>
 </div>""")
 
     if not cards:
@@ -1193,8 +1067,7 @@ def completion_dashboard(stats: dict, day: str, user: dict | None = None,
 <div class="card"><h3>Outstanding work</h3><ul class="worklist">{outstanding_html}</ul></div>
 <div class="card"><h3>Daily checklist · groups</h3><ul class="checklist">{''.join(checklist)}</ul></div>
 </div>
-<div class="sub">Full written reports &amp; KPI health: <a href="/sheet?date={esc(day)}">open the daily sheet →</a>
-&nbsp;·&nbsp; <a href="/?date={esc(stats['prev_day'])}">← {esc(stats['prev_day'])}</a>
+<div class="sub"><a href="/?date={esc(stats['prev_day'])}">← {esc(stats['prev_day'])}</a>
 &nbsp; <a href="/?date={esc(stats['next_day'])}">{esc(stats['next_day'])} →</a></div>"""
     return shell("Daily work completion", "dashboard", day, body,
                  extra_css=_DASH_CSS + _REPORT_CSS, user=user)

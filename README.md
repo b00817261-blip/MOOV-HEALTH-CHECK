@@ -65,8 +65,7 @@ join with an invite link:
 | `/` | **Daily work completion** — the manager's live dashboard: completion tiles (done / pending / overdue / blocked), a roster row per group with a progress bar, overdue flags and last activity, the outstanding-work list, and a daily checklist with percentages. |
 | `/groups` | Set up the desk: add or remove the **groups** that report to you (Operations, Documentation, IT, …) and their leads. Starts empty — you model your real org, nothing is pre-invented. |
 | `/tasks` | The **task board**: assign a task to a group/person with a deadline and watch statuses move. The manager assigns and removes — each group ticks its own work. |
-| `/sheet` | A printable **Daily Status Report** for any date: KPI tiles (fleet score, teams reported, task completion, blockers), completed activities, in-progress tasks, issues & escalations, and today's objectives. Print to PDF straight from the browser. |
-| `/calendar` | A month view of every deadline and every filed report — click a day to open its sheet. |
+| `/calendar` | A month view of every deadline and every filed report — click a day to open its dashboard. |
 | `/history` | **Saved reports**: every day the teams have reported, plus a consolidated table over any date range. |
 
 ### 🧑‍🔧 A group lead's workspace (green)
@@ -81,7 +80,7 @@ report assembles itself.
 | `/calendar` | Their deadlines and update days. |
 
 Every update lands in the manager's **Today's report** card ("Wei L. · 1 done
-· 1 in progress"), the printable daily sheet, and the saved-reports history.
+· 1 in progress") and the saved-reports history.
 
 Signing in is picking a door (plus your group and name if you're a lead) —
 a cookie remembers it, **Sign out** switches roles. There are deliberately
@@ -341,7 +340,7 @@ src/moov_health_check/
   focus.py     # work-focus recommendation engine + fleet themes
   report.py    # terminal / markdown / html / json renderers
   tasks.py     # the shared task list (assign, update status, tick done)
-  pages.py     # HTML pages: tasks, calendar, daily sheet, saved reports
+  pages.py     # HTML pages: tasks, calendar, saved reports
   web.py       # the website: routing + dashboard + submission form (stdlib http.server)
   sample.py    # synthetic global data for --demo
   cli.py       # `serve`, `submit`, and `report` subcommands

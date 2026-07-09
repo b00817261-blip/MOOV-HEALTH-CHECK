@@ -1,3 +1,16 @@
 {
-  "teams": []
+  "groups": [
+    {
+      "team_id": "__root__",
+      "team_name": "the desk",
+      "parent": null,
+      "leader": "Derek",
+      "region": "",
+      "allow_link": true,
+      "tokens": {
+        "leader": "567bd65a9c4547e4a9d1de973aabcfa9",
+        "member": "fcdf1af437c44aee959e95e7fc8aeded"
+      }
+    }
+  ]
 }

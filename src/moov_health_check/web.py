@@ -14,7 +14,6 @@ Pages
 * ``/tasks``        – the task board: the manager assigns, groups tick off
 * ``/groups``       – manager: set up the groups that report to him
 * ``/calendar``     – month view of deadlines & update days
-* ``/sheet``        – printable daily status report, assembled from updates
 * ``/history``      – saved reports: browse back & consolidate over a range
 * ``/report.json``  – machine-readable KPI report (CLI-compatible)
 
@@ -433,11 +432,6 @@ def calendar_page(state: AppState, user: dict, month: str) -> str:
     )
 
 
-def sheet_page(state: AppState, user: dict, day: str) -> str:
-    roster = _scoped_roster(state, user)
-    return pages.sheet_page(completion_stats(state, day, roster), day, user=user)
-
-
 def history_page(state: AppState, user: dict, date_from: str = "",
                  date_to: str = "") -> str:
     return pages.history_page(
@@ -650,7 +644,7 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
             g = self.state.org.get(gid)
             self._send(pages.join_page(g.get("team_name", gid), role, token))
             return
-        if path not in ("/", "/me", "/tasks", "/calendar", "/sheet",
+        if path not in ("/", "/me", "/tasks", "/calendar",
                         "/history", "/groups", "/settings"):
             self._send("Not found.", "text/plain; charset=utf-8", 404)
             return
@@ -685,11 +679,6 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
                 self._send("Bad month — use YYYY-MM.", "text/plain; charset=utf-8", 400)
                 return
             self._send(calendar_page(self.state, user, month))
-        elif path == "/sheet":
-            if not is_leader:
-                self._redirect("/me")
-                return
-            self._send(sheet_page(self.state, user, day))
         elif path == "/history":
             if not is_leader:
                 self._redirect("/me")
@@ -812,7 +801,7 @@ def serve(reports_dir: str, roster_path: str, config_path: str | None,
     shown_host = "localhost" if host in ("0.0.0.0", "127.0.0.1", "") else host
     print("MOOV Health Check website running:")
     print(f"  Sign in:       http://{shown_host}:{port}/login")
-    print(f"    → the manager gets the completion dashboard, task board, groups & sheet")
+    print(f"    → the manager gets the completion dashboard, task board & groups")
     print(f"    → group leads just update their tasks; the report assembles itself")
     print(f"  Data dir:      {reports_dir}")
     print("Press Ctrl+C to stop.")

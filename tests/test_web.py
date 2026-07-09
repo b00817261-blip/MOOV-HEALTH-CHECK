@@ -101,7 +101,7 @@ def lead(server, gid="t1", name="Lena") -> Client:
 
 def test_anonymous_is_sent_to_login(server):
     c = Client(server)
-    for path in ("/", "/me", "/tasks", "/calendar", "/sheet", "/history",
+    for path in ("/", "/me", "/tasks", "/calendar", "/history",
                  "/groups", "/settings"):
         _, body = c.get(path)  # follows the redirect
         assert "Pick" not in body  # (old copy) — new login shows the doors:
@@ -140,7 +140,7 @@ def test_login_and_join_flow(server):
 
 def test_member_cannot_open_leader_pages(server):
     w = member(server, "t1", "Aki")
-    for path in ("/", "/sheet", "/history", "/groups", "/settings"):
+    for path in ("/", "/history", "/groups", "/settings"):
         _, body = w.get(path)
         assert "Today's tasks" in body, path  # bounced to /me
 
@@ -325,7 +325,7 @@ def test_bad_date_and_unknown_path(server):
 
 
 # ---------------------------------------------------------------------------
-# Task board, calendar, sheet & history
+# Task board, calendar & history
 # ---------------------------------------------------------------------------
 
 def test_task_lifecycle(server):
@@ -346,8 +346,8 @@ def test_task_lifecycle(server):
                                 "status": "done", "back": "me"})
     assert "Today's tasks" in body
 
-    _, sheet = m.get("/sheet")
-    assert "Quarterly forecast" in sheet
+    _, dash = m.get("/")
+    assert "Quarterly forecast" in dash
 
     _, body = w.post("/tasks", {"action": "delete", "id": task_id})
     assert "leader can remove" in body
@@ -364,13 +364,13 @@ def test_calendar_shows_deadlines_and_updates(server):
                                                  note="started")
     status, body = m.get("/calendar?month=2026-07")
     assert status == 200 and "July 2026" in body and "Deadline task" in body
-    assert f"/sheet?date={DAY}" in body
+    assert f"/?date={DAY}" in body
     with pytest.raises(urllib.error.HTTPError) as e:
         m.get("/calendar?month=july")
     assert e.value.code == 400
 
 
-def test_daily_sheet_from_updates(server):
+def test_dashboard_report_from_updates(server):
     m = head(server)
     _, body = m.post("/tasks", {"action": "add", "title": "Yesterday job",
                                 "team_id": "t1"})
@@ -379,8 +379,8 @@ def test_daily_sheet_from_updates(server):
         tid, DAY, status="done", note="wrapped it up",
         friction="system", friction_note="portal was down",
         channel="Teams", by="Aki")
-    status, body = m.get(f"/sheet?date={DAY}")
-    assert status == 200 and "DAILY STATUS REPORT" in body
+    status, body = m.get(f"/?date={DAY}")
+    assert status == 200 and "Daily work completion" in body
     assert "wrapped it up" in body
     assert "System issue" in body and "portal was down" in body
     assert "in Teams" in body
