@@ -268,7 +268,8 @@ def visible_tasks(tasks: list, user: dict | None) -> list:
 
 def tasks_page(roster: dict, tasks: list, today: str, user: dict | None = None,
                team_filter: str = "", status_filter: str = "",
-               toast: str = "", error: str = "") -> str:
+               toast: str = "", error: str = "", channels: list | None = None) -> str:
+    channels = channels if channels is not None else []
     team_names = {tid: info.get("team_name", tid) for tid, info in roster.items()}
     can_manage = bool(user) and user.get("role") == "manager"
     tasks = visible_tasks(tasks, user)
@@ -362,35 +363,53 @@ def tasks_page(roster: dict, tasks: list, today: str, user: dict | None = None,
             who = esc(who)
         is_assigner = bool(me_name) and \
             (t.get("created_by") or "").strip().lower() == me_name
-        if is_assigner:
-            # Only the person who assigned a task can remove it.
-            actions = (f'<form method="post" action="/tasks" class="rowform" '
-                       f'onsubmit="return confirm(\'Delete this task?\')">'
-                       f'<input type="hidden" name="action" value="delete">'
-                       f'<input type="hidden" name="id" value="{tid}">'
-                       f'<input type="hidden" name="back" value="{esc(back)}">'
-                       f'<button type="submit" class="danger" title="Delete">✕ Remove</button></form>')
-        else:
-            # You're doing this task: move its status, tick it done, or — if
-            # you can't — raise a request to your lead instead of removing it.
-            opts = "".join(
-                f'<option value="{k}"{" selected" if t.get("status") == k else ""}>{v}</option>'
-                for k, v in tasks_mod.STATUSES.items()
-            )
-            done_btn = ""
-            if t.get("status") not in ("done", "canceled"):
-                done_btn = (f'<form method="post" action="/tasks" class="rowform">'
-                            f'<input type="hidden" name="action" value="status">'
-                            f'<input type="hidden" name="id" value="{tid}">'
-                            f'<input type="hidden" name="status" value="done">'
-                            f'<input type="hidden" name="back" value="{esc(back)}">'
-                            f'<button type="submit" title="Mark done">✓ Done</button></form>')
-            reason_opts = "".join(
+        # Everyone working the board gets the same doer controls: move the
+        # status, or tick it done — which opens a short survey (where the work
+        # landed, any difficulty) matching My day. On top of that, the person
+        # who assigned the task can remove it; anyone else can instead flag
+        # that they can't do it / need more time.
+        opts = "".join(
+            f'<option value="{k}"{" selected" if t.get("status") == k else ""}>{v}</option>'
+            for k, v in tasks_mod.STATUSES.items()
+        )
+        reason_opts = "".join(
+            f'<label style="display:inline-block;margin:2px 8px 2px 0;font-size:13px">'
+            f'<input type="radio" name="reason" value="{k}"> {esc(v)}</label>'
+            for k, v in tasks_mod.FRICTION_REASONS.items()
+        )
+        done_survey = ""
+        if t.get("status") not in ("done", "canceled"):
+            chan_opts = "".join(
                 f'<label style="display:inline-block;margin:2px 8px 2px 0;font-size:13px">'
-                f'<input type="radio" name="reason" value="{k}"> {esc(v)}</label>'
-                for k, v in tasks_mod.FRICTION_REASONS.items()
+                f'<input type="radio" name="channel" value="{esc(c["key"])}"> {esc(c["label"])}</label>'
+                for c in channels
             )
-            request_form = f"""<details class="reqform">
+            where_q = (f'<div class="q">Where\'s it at?</div><div>{chan_opts}</div>'
+                       if channels else "")
+            done_survey = f"""<details class="donesurvey">
+  <summary>✓ Done</summary>
+  <form method="post" action="/tasks">
+    <input type="hidden" name="action" value="complete">
+    <input type="hidden" name="id" value="{tid}">
+    <input type="hidden" name="back" value="{esc(back)}">
+    {where_q}
+    <div class="q">Did you hit any difficulty?</div>
+    <div><label style="display:inline-block;margin:2px 8px 2px 0;font-size:13px">
+      <input type="radio" name="reason" value="" checked> No — went fine</label>{reason_opts}</div>
+    <input type="text" name="fdetail" placeholder="More on the difficulty (optional)" style="width:100%;margin-top:6px">
+    <input type="text" name="note" placeholder="What you did (optional)" style="width:100%;margin-top:6px">
+    <button type="submit" style="margin-top:8px">✓ Mark done</button>
+  </form>
+</details>"""
+        if is_assigner:
+            extra = (f'<form method="post" action="/tasks" class="reqform" '
+                     f'onsubmit="return confirm(\'Delete this task?\')" style="margin-top:8px">'
+                     f'<input type="hidden" name="action" value="delete">'
+                     f'<input type="hidden" name="id" value="{tid}">'
+                     f'<input type="hidden" name="back" value="{esc(back)}">'
+                     f'<button type="submit" class="danger" title="Delete">✕ Remove</button></form>')
+        else:
+            extra = f"""<details class="reqform">
   <summary>🙁 Can't do it / need more time</summary>
   <form method="post" action="/tasks">
     <input type="hidden" name="action" value="request">
@@ -404,7 +423,7 @@ def tasks_page(roster: dict, tasks: list, today: str, user: dict | None = None,
     <button type="submit" class="ghost" style="margin-top:8px">Send to my lead</button>
   </form>
 </details>"""
-            actions = f"""<div class="rowform">
+        actions = f"""<div class="rowform">
   <form method="post" action="/tasks" class="rowform">
     <input type="hidden" name="action" value="status">
     <input type="hidden" name="id" value="{tid}">
@@ -412,9 +431,9 @@ def tasks_page(roster: dict, tasks: list, today: str, user: dict | None = None,
     <select name="status">{opts}</select>
     <button type="submit" class="ghost">Save</button>
   </form>
-  {done_btn}
 </div>
-{request_form}"""
+{done_survey}
+{extra}"""
         rows.append(f"""<tr>
 <td><b>{esc(t.get('title', ''))}</b>{f'<div class="muted" style="font-size:12px">{esc(t["notes"])}</div>' if t.get('notes') else ''}</td>
 <td>{who}</td>
@@ -457,14 +476,19 @@ def tasks_page(roster: dict, tasks: list, today: str, user: dict | None = None,
 
 
 _TASKS_CSS = """
-details.reqform { margin-top: 8px; }
-details.reqform summary { list-style: none; cursor: pointer; color: #d99513;
-  font-size: 13px; display: inline-block; }
-details.reqform summary::-webkit-details-marker { display: none; }
-details.reqform[open] summary { margin-bottom: 4px; }
-details.reqform .q { font-size: 12px; color: #8a8f98; margin: 8px 0 4px; }
-details.reqform label { color: #b7bcc4; }
-@media (prefers-color-scheme: light) { details.reqform label { color: #5a6068; } }
+details.reqform, details.donesurvey { margin-top: 8px; }
+details.reqform summary, details.donesurvey summary { list-style: none;
+  cursor: pointer; font-size: 13px; display: inline-block; }
+details.reqform summary { color: #d99513; }
+details.donesurvey summary { color: #1e9e5a; font-weight: 600; }
+details.reqform summary::-webkit-details-marker,
+details.donesurvey summary::-webkit-details-marker { display: none; }
+details.reqform[open] summary, details.donesurvey[open] summary { margin-bottom: 4px; }
+details.reqform .q, details.donesurvey .q { font-size: 12px; color: #8a8f98; margin: 8px 0 4px; }
+details.reqform label, details.donesurvey label { color: #b7bcc4; }
+@media (prefers-color-scheme: light) {
+  details.reqform label, details.donesurvey label { color: #5a6068; }
+}
 """
 
 

@@ -156,16 +156,20 @@ def test_interfaces_look_different(server):
     assert "Team One tasks" in wbody
 
 
-def test_head_cannot_tick_tasks_only_groups_can(server):
+def test_everyone_ticks_from_the_board_assigner_also_removes(server):
     m = head(server)
     m.post("/tasks", {"action": "add", "title": "Group job", "team_id": "t1"})
+    # The assigner (head) can tick it done via the survey AND remove it, but
+    # doesn't get the "can't do it" request (they're the one who assigned it).
     _, mbody = m.get("/tasks")
-    assert "✓ Done" not in mbody
-    assert 'name="status"' not in mbody
+    assert "✓ Done" in mbody and 'name="status"' in mbody
     assert "✕ Remove" in mbody
+    assert "Can't do it" not in mbody
+    # A member gets the same Done survey, but requests instead of removing.
     _, wbody = member(server, "t1", "Aki").get("/tasks")
-    assert "✓ Done" in wbody
-    assert 'name="status"' in wbody
+    assert "✓ Done" in wbody and 'name="status"' in wbody
+    assert "✕ Remove" not in wbody
+    assert "Can't do it" in wbody
 
 
 # ---------------------------------------------------------------------------
@@ -337,6 +341,30 @@ def test_bad_date_and_unknown_path(server):
 # ---------------------------------------------------------------------------
 # Task board, calendar & history
 # ---------------------------------------------------------------------------
+
+def test_done_survey_from_the_board(server):
+    m = head(server)
+    _, body = m.post("/tasks", {"action": "add", "title": "Refresh PEPCO report",
+                                "team_id": "t1"})
+    tid = _task_id(body)
+
+    w = member(server, "t1", "Aki")
+    # The board's Done control opens a survey — where + any difficulty.
+    _, body = w.get("/tasks")
+    assert "✓ Done" in body and "Where's it at?" in body
+    assert "Did you hit any difficulty?" in body and "Email" in body
+
+    _, body = w.post("/tasks", {"action": "complete", "id": tid,
+                                "channel": "teams", "reason": "time",
+                                "fdetail": "portal was slow",
+                                "note": "sent the refreshed numbers"})
+    assert "Task marked done" in body
+
+    # It records the channel + difficulty and surfaces on the boss's report.
+    _, dash = m.get("/")
+    assert "sent the refreshed numbers" in dash
+    assert "in Teams" in dash and "Not enough time" in dash
+
 
 def test_task_lifecycle(server):
     m = head(server)

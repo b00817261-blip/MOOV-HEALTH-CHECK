@@ -439,6 +439,7 @@ def tasks_page(state: AppState, user: dict, team: str = "", status: str = "",
     return pages.tasks_page(
         _scoped_roster(state, user), state.tasks.load(), _today(), user=user,
         team_filter=team, status_filter=status, toast=toast, error=error,
+        channels=state.org.channels(),
     )
 
 
@@ -568,6 +569,23 @@ def handle_task_action(state: AppState, form: dict, user: dict) -> tuple[bool, s
             verb = "marked done 🎉" if task["status"] == "done" else \
                 f"moved to {task['status'].replace('_', ' ')}"
             return True, f"Task {verb}: {task['title']}"
+        if action == "complete":
+            task = state.tasks.get(field("id"))
+            if task is None:
+                return False, "That task no longer exists."
+            if not pages.visible_tasks([task], user):
+                return False, "That task belongs to another group."
+            channel_labels = {c["key"]: c["label"] for c in state.org.channels()}
+            channel = channel_labels.get(field("channel"), "")
+            friction = field("reason")
+            if friction and friction not in tasks_mod.FRICTION_REASONS:
+                friction = ""
+            friction_note = field("fdetail")[:300] if friction else ""
+            state.tasks.record_update(
+                task["id"], _today(), status="done", note=field("note")[:300],
+                friction=friction, friction_note=friction_note,
+                channel=channel, by=user.get("name", ""))
+            return True, f"Task marked done 🎉: {task['title']}"
         if action == "delete":
             task = state.tasks.get(field("id"))
             if task is None:
