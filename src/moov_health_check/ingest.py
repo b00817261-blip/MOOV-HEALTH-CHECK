@@ -78,7 +78,9 @@ def load_roster(roster_path: str) -> dict:
     """
     data = json.loads(Path(roster_path).read_text(encoding="utf-8"))
     teams = data.get("teams", data)
-    return {str(t["team_id"]): t for t in teams}
+    # Skip the org's synthetic root node (ids like "__root__").
+    return {str(t["team_id"]): t for t in teams
+            if not str(t["team_id"]).startswith("__")}
 
 
 def load_reports_dir(

@@ -33,8 +33,30 @@ python -m moov_health_check serve --reports-dir data/example/reports --roster da
 Open **http://localhost:8000** — that's it. No frameworks, no database,
 nothing else to install.
 
-The site opens on a **sign-in screen with two doors** — one website, two
-completely different workspaces:
+### 👑 Registration — invite links, recursive groups
+
+There are no fixed "manager" and "employee" tiers. The org is a **tree of
+groups**, and everyone is either a group's **leader** (the boss of that group's
+whole branch) or a **member**:
+
+1. The first person signs in as the **head of the desk** (name required) — they
+   lead the root and see everything.
+2. On **Groups & invites** they add groups (Operations, IT, …) and share each
+   group's **leader** or **member** invite link.
+3. Whoever opens a link lands on a **Join <group>** page, confirms their name,
+   and is placed in that exact group — a leader gets the boss workspace scoped
+   to their own branch and can nest their own sub-groups and invite their own
+   people; a member just updates tasks. "Each person can start their own team."
+
+So the same code runs one head over 300 people or a shift-lead over three —
+just deeper in the tree. On **Settings** the boss edits the "Where's it at?"
+channels (rename "SmartMOOV", add "WhatsApp", …). Attaching a link (an
+email/Teams URL the boss opens from the report) works today; a *live* connect
+into Gmail/Outlook/Teams needs the app hosted on a real server with provider
+credentials — the paste-a-link field is the slot it will fill.
+
+The site opens on a **sign-in screen with two doors** — sign in as head, or
+join with an invite link:
 
 ### 👔 The manager's workspace (blue)
 

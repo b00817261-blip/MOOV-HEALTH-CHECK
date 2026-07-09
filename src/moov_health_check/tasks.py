@@ -193,20 +193,19 @@ class TaskStore:
     def record_update(self, task_id: str, day: str, status: str = "",
                       note: str = "", friction: str = "",
                       friction_note: str = "", channel: str = "",
-                      by: str = "") -> dict | None:
+                      link: str = "", by: str = "") -> dict | None:
         """A group lead's daily update on one task.
 
-        Sets the task's status (if given) and stores the day's update —
-        note, friction, channel — under ``task["updates"][day]``, which is
-        what the manager's assembled report reads. Returns the task, or
-        None if it doesn't exist.
+        Sets the task's status (if given) and stores the day's update — note,
+        friction, ``channel`` (a boss-configured label like "Email"), and an
+        optional ``link`` (a pasted email/Teams reference) — under
+        ``task["updates"][day]``, which is what the manager's assembled report
+        reads. Returns the task, or None if it doesn't exist.
         """
         if status and status not in STATUSES:
             raise ValueError(f"Unknown status {status!r}.")
         if friction and friction not in FRICTION_REASONS:
             raise ValueError(f"Unknown friction reason {friction!r}.")
-        if channel and channel not in CHANNELS:
-            raise ValueError(f"Unknown channel {channel!r}.")
         with self._lock:
             tasks = self.load()
             for t in tasks:
@@ -223,7 +222,8 @@ class TaskStore:
                         "note": note.strip(),
                         "friction": friction,
                         "friction_note": friction_note.strip(),
-                        "channel": channel,
+                        "channel": channel.strip(),
+                        "link": link.strip(),
                         "by": by.strip(),
                         "at": _now(),
                     }

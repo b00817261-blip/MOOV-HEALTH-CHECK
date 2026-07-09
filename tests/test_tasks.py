@@ -108,6 +108,14 @@ def test_record_update_validates(store):
         store.record_update(t["id"], TODAY, status="bogus")
     with _pytest.raises(ValueError):
         store.record_update(t["id"], TODAY, friction="bogus")
-    with _pytest.raises(ValueError):
-        store.record_update(t["id"], TODAY, channel="fax")
+    # channel is a free-form boss-configured label, so any string is fine
+    assert store.record_update(t["id"], TODAY, channel="SmartMOOV") is not None
     assert store.record_update("nope", TODAY, status="done") is None
+
+
+def test_record_update_stores_link(store):
+    t = store.add("Chase")
+    got = store.record_update(t["id"], TODAY, note="sent",
+                              link="https://mail.example.com/x", channel="Email")
+    assert got["updates"][TODAY]["link"] == "https://mail.example.com/x"
+    assert got["updates"][TODAY]["channel"] == "Email"

@@ -16,6 +16,7 @@ from pathlib import Path
 
 from . import tasks as tasks_mod
 from .models import Status
+from .org import ROOT_ID
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -158,31 +159,33 @@ body.role-worker .topnav { border-top: 3px solid #2fae6e; padding-top: 10px; }
 def nav(active: str, day: str, user: dict | None = None) -> str:
     d = esc(day)
     month = esc(day[:7])
-    role = (user or {}).get("role", "")
-    if role == "manager":
+    if user and user.get("is_leader"):
         links = [
             ("dashboard", f"/?date={d}", "📊 Dashboard"),
             ("sheet", f"/sheet?date={d}", "📄 Daily sheet"),
             ("tasks", "/tasks", "✅ Tasks"),
             ("calendar", f"/calendar?month={month}", "🗓 Calendar"),
             ("history", "/history", "🗂 Saved reports"),
-            ("groups", "/groups", "👥 Groups"),
+            ("groups", "/groups", "👥 Groups & invites"),
+            ("settings", "/settings", "⚙️ Settings"),
         ]
         name = user.get("name") or ""
-        who = f"Manager · {esc(name)}" if name else "Manager"
+        title = "Head" if user.get("is_root") else "Lead · " + esc(user.get("group_name", ""))
+        who = f"{title} · {esc(name)}" if name else title
         chip = f'<span class="role-chip manager" style="margin-left:auto">{who}</span>'
-        primary = ""
-    elif role == "worker":
+    elif user:
         links = [
             ("me", "/me", "🏠 My day"),
             ("tasks", "/tasks", "✅ My tasks"),
             ("calendar", f"/calendar?month={month}", "🗓 Calendar"),
         ]
-        who = esc(user.get("name") or user.get("team_name") or "Team")
-        chip = f'<span class="role-chip worker" style="margin-left:auto">Team · {who}</span>'
-        primary = ""
+        name = user.get("name") or ""
+        who = f"{esc(name)} · {esc(user.get('group_name', ''))}" if name \
+            else esc(user.get("group_name", "Team"))
+        chip = f'<span class="role-chip worker" style="margin-left:auto">{who}</span>'
     else:
         return ""
+    primary = ""
     out = ['<nav class="topnav">']
     for key, href, label in links:
         cls = ' class="active"' if key == active else ""
@@ -196,8 +199,12 @@ def nav(active: str, day: str, user: dict | None = None) -> str:
 
 def shell(title: str, active: str, day: str, body: str, extra_css: str = "",
           user: dict | None = None) -> str:
-    role = (user or {}).get("role", "")
-    body_cls = f' class="role-{esc(role)}"' if role else ""
+    if user and user.get("is_leader"):
+        body_cls = ' class="role-manager"'
+    elif user:
+        body_cls = ' class="role-worker"'
+    else:
+        body_cls = ""
     return f"""<!DOCTYPE html>
 <html lang="en"><head>
 <meta charset="utf-8">
@@ -238,15 +245,23 @@ def _bars(counts: dict, labels: dict, colors: dict) -> str:
 # ---------------------------------------------------------------------------
 
 def visible_tasks(tasks: list, user: dict | None) -> list:
-    """Which tasks a user sees: managers see all; team members see their
-    team's tasks, tasks assigned to them by name, and unassigned tasks."""
-    if not user or user.get("role") == "manager":
+    """Which tasks a person sees.
+
+    * the head of the desk sees everything;
+    * a group leader sees every task in their subtree (their ``scope``);
+    * a member sees their own group's tasks, tasks assigned to them by name,
+      and unassigned tasks.
+    """
+    if not user or user.get("is_root"):
         return tasks
-    team_id = user.get("team_id", "")
+    scope = set(user.get("scope") or [])
+    if user.get("is_leader"):
+        return [t for t in tasks if t.get("team_id") in scope]
     name = (user.get("name") or "").strip().lower()
+    group_id = user.get("group_id", "")
     return [
         t for t in tasks
-        if t.get("team_id") == team_id
+        if t.get("team_id") == group_id
         or not t.get("team_id")
         or (name and (t.get("assignee") or "").strip().lower() == name)
     ]
@@ -707,52 +722,101 @@ def history_page(tasks: list, roster: dict, today: str,
 
 
 # ---------------------------------------------------------------------------
-# /login — two doors: the manager's and the team member's
+# /login and /join — sign in as the head, or join via an invite link
 # ---------------------------------------------------------------------------
 
-def login_page(roster: dict, error: str = "") -> str:
-    if roster:
-        team_opts = ['<option value="">— choose your group —</option>'] + [
-            f'<option value="{esc(tid)}">{esc(info.get("team_name", tid))}</option>'
-            for tid, info in roster.items()
-        ]
-        worker_form = f"""<form method="post" action="/login">
-      <input type="hidden" name="role" value="worker">
-      <select name="team" required>{''.join(team_opts)}</select>
-      <input type="text" name="name" placeholder="Your name (optional)">
-      <button type="submit">Enter my workspace →</button>
-    </form>"""
-    else:
-        worker_form = ('<div class="desc" style="margin:0">Your manager has not '
-                       "added any groups yet — ask them to sign in and set up "
-                       "the desk first.</div>")
+def login_page(head_exists: bool, error: str = "") -> str:
     error_html = f'<div class="toast error">⚠ {esc(error)}</div>' if error else ""
+    head_line = ("Sign in to oversee the whole desk."
+                 if not head_exists else
+                 "You're already set up — sign in to pick up where you left off.")
     body = f"""<div class="login-hero">
   <h1>🚦 MOOV daily reporting</h1>
-  <div class="sub">One website, two workspaces. Pick yours.</div>
+  <div class="sub">Assign work, update it, and the report writes itself.</div>
 </div>
 {error_html}
 <div class="grid2" style="max-width:820px;margin:0 auto">
   <div class="card login-card manager">
-    <h3>👔 I'm the manager</h3>
-    <div class="desc">The live completion dashboard, task assignment
-      &amp; deadlines, every group's report, the printable daily sheet.</div>
+    <h3>👑 I'm the head of the desk</h3>
+    <div class="desc">{head_line} You'll see everything, create groups,
+      and invite your group leaders with a link.</div>
     <form method="post" action="/login">
-      <input type="hidden" name="role" value="manager">
-      <input type="text" name="name" placeholder="Your name (optional)">
-      <button type="submit">Enter the manager workspace →</button>
+      <input type="text" name="name" placeholder="Your name" required>
+      <button type="submit">Enter as head →</button>
     </form>
   </div>
   <div class="card login-card worker">
-    <h3>🧑‍🔧 I lead a group</h3>
-    <div class="desc">Swipe through today's tasks — Done or In progress, a note,
-      any friction. Your updates assemble into the boss's daily report.</div>
-    {worker_form}
+    <h3>🔗 I have an invite link</h3>
+    <div class="desc">Your boss shared a link to join their group. Open it, or
+      paste it here — you'll confirm your name and you're in.</div>
+    <form method="get" action="/join">
+      <input type="text" name="link" placeholder="Paste your invite link" required>
+      <button type="submit">Continue →</button>
+    </form>
   </div>
 </div>
 <p class="muted" style="text-align:center;font-size:12px;margin-top:26px">
-No passwords — this site is meant for a trusted office network or VPN.</p>"""
+No passwords — you join through an invite link, on a trusted office network or VPN.</p>"""
     return shell("Sign in", "", "", body)
+
+
+def join_page(group_name: str, role: str, token: str, error: str = "") -> str:
+    error_html = f'<div class="toast error">⚠ {esc(error)}</div>' if error else ""
+    role_line = ("lead" if role == "leader" else "member of")
+    extra = ("" if role != "leader" else
+             '<div class="desc">As the lead you can update your group\'s tasks, '
+             "create sub-groups, and invite your own people.</div>")
+    body = f"""<div class="login-hero">
+  <h1>🚦 Join {esc(group_name)}</h1>
+  <div class="sub">You've been invited to be a <b>{role_line} {esc(group_name)}</b>.</div>
+</div>
+{error_html}
+<div class="card login-card worker" style="max-width:460px;margin:0 auto">
+  <h3>Confirm your name to join</h3>
+  {extra}
+  <form method="post" action="/join">
+    <input type="hidden" name="token" value="{esc(token)}">
+    <input type="text" name="name" placeholder="Your full name" required autofocus>
+    <button type="submit">Join {esc(group_name)} →</button>
+  </form>
+</div>
+<p class="muted" style="text-align:center;font-size:12px;margin-top:20px">
+Not you? <a href="/login">Go back</a>.</p>"""
+    return shell(f"Join {group_name}", "", "", body)
+
+
+def settings_page(channels: list, today: str, user: dict | None = None,
+                  toast: str = "") -> str:
+    rows = "".join(
+        f'<div class="rowform" style="margin:6px 0">'
+        f'<input type="text" name="channel" value="{esc(c["label"])}">'
+        f'</div>' for c in channels
+    )
+    toast_html = f'<div class="toast">✓ {esc(toast)}</div>' if toast else ""
+    body = f"""<h1>⚙️ Settings</h1>
+<div class="sub">Tune the words your teams see — these are yours to change.</div>
+{toast_html}
+<div class="card"><h3>"Where's it at?" channels</h3>
+<div class="sub" style="margin:0 0 10px">The places work lives, offered when a lead
+updates a task. Rename or remove ones you don't use (e.g. "SmartMOOV"), add your own,
+and leave a box blank to drop it.</div>
+<form method="post" action="/settings">
+  <input type="hidden" name="action" value="channels">
+  <div id="chans">{rows}
+    <div class="rowform" style="margin:6px 0"><input type="text" name="channel"
+      placeholder="Add a channel (e.g. WhatsApp)"></div>
+    <div class="rowform" style="margin:6px 0"><input type="text" name="channel"
+      placeholder="Add another"></div>
+  </div>
+  <button type="submit" style="margin-top:10px">Save channels</button>
+</form></div>
+<div class="card"><h3>🔌 Connect email &amp; Teams <span class="muted">— roadmap</span></h3>
+<div class="sub" style="margin:0">Today a lead can <b>paste a link</b> to an email or
+Teams message on any task update, and you open it from the report. A live
+"connect your inbox and pick the message" integration needs this hosted on a real
+server with Google/Microsoft credentials — it's the next step once you deploy it,
+and the paste-a-link field is the same slot it will fill.</div></div>"""
+    return shell("Settings", "settings", today, body, user=user)
 
 
 # ---------------------------------------------------------------------------
@@ -790,7 +854,8 @@ input.fr-yes:checked ~ .fr-detail { display: block; }
 """
 
 
-def _update_card(t: dict, today: str, open_card: bool) -> str:
+def _update_card(t: dict, today: str, open_card: bool, channels: list,
+                 allow_link: bool) -> str:
     tid = esc(t["id"])
     upd = tasks_mod.update_for_day(t, today) or {}
     status = t.get("status", "todo")
@@ -810,14 +875,27 @@ def _update_card(t: dict, today: str, open_card: bool) -> str:
         rc = ' checked' if upd.get("friction") == key else ""
         reasons.append(
             f'<input type="radio" id="rs_{tid}_{key}" name="reason_{tid}" value="{key}"{rc}>'
-            f'<label class="optchip" for="rs_{tid}_{key}">{label}</label>'
+            f'<label class="optchip" for="rs_{tid}_{key}">{esc(label)}</label>'
         )
-    channels = []
-    for key, label in tasks_mod.CHANNELS.items():
-        cc = ' checked' if upd.get("channel") == key else ""
-        channels.append(
-            f'<input type="radio" id="ch_{tid}_{key}" name="channel_{tid}" value="{key}"{cc}>'
-            f'<label class="optchip" for="ch_{tid}_{key}">{label}</label>'
+    # Channels are boss-configured; match the saved update by its label.
+    chan_html = []
+    for c in channels:
+        cc = ' checked' if upd.get("channel") == c["label"] else ""
+        chan_html.append(
+            f'<input type="radio" id="ch_{tid}_{esc(c["key"])}" name="channel_{tid}" '
+            f'value="{esc(c["key"])}"{cc}>'
+            f'<label class="optchip" for="ch_{tid}_{esc(c["key"])}">{esc(c["label"])}</label>'
+        )
+    where_block = ""
+    if channels:
+        where_block = f'<div class="q">Where\'s it at?</div>{"".join(chan_html)}'
+    link_block = ""
+    if allow_link:
+        link_block = (
+            '<div class="q">Attach a link <span class="muted">'
+            '(email / Teams / doc — optional)</span></div>'
+            f'<input type="text" name="link_{tid}" value="{esc(upd.get("link", ""))}" '
+            'placeholder="Paste a link the boss can open">'
         )
 
     return f"""<details class="tcard"{' open' if open_card else ''}>
@@ -841,15 +919,18 @@ def _update_card(t: dict, today: str, open_card: bool) -> str:
     <div class="q">What got in the way?</div>
     {''.join(reasons)}
     <input type="text" name="fdetail_{tid}" value="{esc(upd.get('friction_note', ''))}"
-      placeholder="Explain (only if none fit)">
+      placeholder="Add a detail for the boss (optional)">
   </div>
-  <div class="q">Where's it at?</div>
-  {''.join(channels)}
+  {where_block}
+  {link_block}
 </div>
 </details>"""
 
 
-def me_page(user: dict, tasks: list, today: str, sent: int = 0) -> str:
+def me_page(user: dict, tasks: list, today: str, channels: list | None = None,
+            sent: int = 0) -> str:
+    channels = channels if channels is not None else []
+    allow_link = True  # per-group toggle applies at submit; keep the field visible
     name = user.get("name") or ""
     team_name = user.get("team_name") or user.get("team_id") or "your group"
 
@@ -876,7 +957,7 @@ def me_page(user: dict, tasks: list, today: str, sent: int = 0) -> str:
             is_open = t.get("status") != "done" and first_open
             if is_open:
                 first_open = False
-            cards.append(_update_card(t, today, is_open))
+            cards.append(_update_card(t, today, is_open, channels, allow_link))
         form = f"""<form method="post" action="/updates">
 {''.join(cards)}
 <div class="submitbar"><button type="submit">Submit · {done_n} of {len(todays)} done</button></div>
@@ -977,6 +1058,10 @@ def group_report_cards(group_reports: list, silent: list) -> str:
                     else '<span style="color:#d99513">🕓</span>')
             note = f' <span class="note">— {esc(it["note"])}</span>' if it["note"] else ""
             chips = ""
+            if it.get("link"):
+                chips += (f'<a class="rep-chip" style="border-color:#8ab4f8;'
+                          f'color:#8ab4f8" href="{esc(it["link"])}" target="_blank" '
+                          f'rel="noopener">🔗 open</a>')
             if it["channel"]:
                 chips += (f'<span class="rep-chip" style="border-color:#8ab4f8;'
                           f'color:#8ab4f8">in {esc(it["channel"])}</span>')
@@ -1116,50 +1201,121 @@ def completion_dashboard(stats: dict, day: str, user: dict | None = None,
 
 
 # ---------------------------------------------------------------------------
-# /groups — the manager sets up who reports to him
+# /groups — a leader builds their branch of the tree and shares invite links
 # ---------------------------------------------------------------------------
 
-def groups_page(roster: dict, today: str, user: dict | None = None,
-                toast: str = "", error: str = "") -> str:
-    rows = []
-    for tid, info in roster.items():
-        lead = esc(info.get("manager", "")) or '<span class="muted">—</span>'
-        region = esc(info.get("region", "")) or '<span class="muted">—</span>'
-        rows.append(f"""<tr>
-<td><b>{esc(info.get('team_name', tid))}</b> <span class="muted" style="font-size:12px">({esc(tid)})</span></td>
-<td>{lead}</td>
-<td>{region}</td>
-<td><form method="post" action="/groups" class="rowform"
-     onsubmit="return confirm('Remove this group? Its past reports stay on disk.')">
-  <input type="hidden" name="action" value="delete">
-  <input type="hidden" name="id" value="{esc(tid)}">
-  <button type="submit" class="danger">✕ Remove</button></form></td></tr>""")
-    if not rows:
-        rows.append('<tr><td colspan="4" class="muted">No groups yet — add the first one below.</td></tr>')
+_GROUPS_CSS = """
+.gnode { border: 1px solid #262a31; border-radius: 12px; background: #171a21;
+  padding: 14px 16px; margin-bottom: 10px; }
+.gnode .ghead { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.gnode .gname { font-weight: 700; }
+.gnode .glead { color: #8a8f98; font-size: 13px; }
+.invite { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+.invite .lbl { font-size: 12px; color: #8a8f98; min-width: 92px; }
+.invite input { flex: 1; min-width: 220px; font-size: 12px; color: #8ab4f8; }
+.gactions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.gactions form { display: inline-flex; gap: 6px; align-items: center; }
+.addsub { margin-top: 10px; padding-top: 10px; border-top: 1px dashed #2c313a; }
+@media (prefers-color-scheme: light) {
+  .gnode { background: #fff; border-color: #e3e6ea; }
+  .addsub { border-color: #d4d9df; }
+}
+"""
 
+
+def _group_node_html(org, gid: str, base_url: str, depth: int = 0) -> str:
+    g = org.get(gid)
+    if g is None:
+        return ""
+    name = esc(g.get("team_name", gid))
+    lead = g.get("leader", "")
+    lead_html = f'<span class="glead">· led by {esc(lead)}</span>' if lead \
+        else '<span class="glead">· no lead yet — share the leader link</span>'
+    tokens = g.get("tokens") or {}
+    allow = g.get("allow_link", True)
+
+    def invite_row(role, label):
+        tok = tokens.get(role, "")
+        link = f"{base_url}/join?link={tok}" if tok else ""
+        field = (f'<input type="text" readonly onclick="this.select()" '
+                 f'value="{esc(link)}">' if tok else
+                 '<span class="muted" style="font-size:12px">not generated</span>')
+        btn = (f'<form method="post" action="/groups"><input type="hidden" name="action" '
+               f'value="reinvite"><input type="hidden" name="id" value="{esc(gid)}">'
+               f'<input type="hidden" name="role" value="{role}">'
+               f'<button type="submit" class="ghost">{"New" if tok else "Generate"} link</button></form>')
+        return (f'<div class="invite"><span class="lbl">{label}</span>{field}{btn}</div>')
+
+    invites = invite_row("leader", "Leader link") + invite_row("member", "Member link")
+
+    actions = (
+        f'<form method="post" action="/groups" '
+        f'onsubmit="return confirm(\'Remove {name} and everything under it?\')">'
+        f'<input type="hidden" name="action" value="delete">'
+        f'<input type="hidden" name="id" value="{esc(gid)}">'
+        f'<button type="submit" class="danger">✕ Remove</button></form>'
+        f'<form method="post" action="/groups">'
+        f'<input type="hidden" name="action" value="toggle_link">'
+        f'<input type="hidden" name="id" value="{esc(gid)}">'
+        f'<button type="submit" class="ghost">'
+        f'{"🔗 Attachments: on" if allow else "🔗 Attachments: off"}</button></form>'
+    )
+    addsub = (
+        f'<div class="addsub"><form method="post" action="/groups" class="addform">'
+        f'<input type="hidden" name="action" value="add">'
+        f'<input type="hidden" name="parent" value="{esc(gid)}">'
+        f'<div class="fld" style="flex:1;min-width:160px"><label>Sub-group of {name}</label>'
+        f'<input type="text" name="name" required placeholder="e.g. Night shift" style="width:100%"></div>'
+        f'<div class="fld"><label>Lead name (optional)</label>'
+        f'<input type="text" name="lead" placeholder="who leads it"></div>'
+        f'<button type="submit">Add sub-group</button></form></div>'
+    )
+
+    inner = "".join(_group_node_html(org, c["team_id"], base_url, depth + 1)
+                    for c in org.children(gid))
+    inner_html = f'<div style="margin-left:22px;margin-top:10px">{inner}</div>' if inner else ""
+    return (f'<div class="gnode">'
+            f'<div class="ghead"><span class="gname">{name}</span>{lead_html}</div>'
+            f'{invites}<div class="gactions">{actions}</div>{addsub}'
+            f'{inner_html}</div>')
+
+
+def groups_page(state, user: dict, toast: str = "", error: str = "",
+                base_url: str = "") -> str:
+    org = state.org
+    root = user.get("group_id") if not user.get("is_root") else ROOT_ID
+    today = ""
     toast_html = ""
     if toast:
         toast_html = f'<div class="toast">✓ {esc(toast)}</div>'
     if error:
         toast_html = f'<div class="toast error">⚠ {esc(error)}</div>'
 
-    body = f"""<h1>👥 Groups</h1>
-<div class="sub">The groups that report to you every day — their leads pick their group when they sign in.
-Add a region only if your desk actually spans more than one.</div>
+    # The children of the person's own node are the groups they manage.
+    children = org.children(root)
+    if children:
+        tree = "".join(_group_node_html(org, c["team_id"], base_url) for c in children)
+    else:
+        tree = ('<div class="card" style="text-align:center;padding:32px">'
+                '<div class="sub" style="margin:0">No groups yet. Add your first one '
+                "below, then share its invite link with whoever leads it.</div></div>")
+
+    where = "your desk" if user.get("is_root") else f'“{esc(user.get("group_name",""))}”'
+    body = f"""<h1>👥 Groups &amp; invites</h1>
+<div class="sub">Build out {where}: add a group, share its <b>leader</b> or
+<b>member</b> link, and whoever opens it joins that exact group. Leaders can then
+nest their own sub-groups — as deep as you like.</div>
 {toast_html}
-<div class="card" style="padding:0 8px">
-<table>
-<thead><tr><th>Group</th><th>Lead</th><th>Region</th><th></th></tr></thead>
-<tbody>{''.join(rows)}</tbody></table></div>
-<div class="card"><h3>➕ Add a group</h3>
+<div class="card"><h3>➕ Add a group under {where}</h3>
 <form method="post" action="/groups" class="addform">
   <input type="hidden" name="action" value="add">
+  <input type="hidden" name="parent" value="{esc(root)}">
   <div class="fld" style="flex:1;min-width:180px"><label>Group name</label>
     <input type="text" name="name" required placeholder="e.g. Operations, Documentation, IT" style="width:100%"></div>
-  <div class="fld"><label>Lead (optional)</label>
-    <input type="text" name="lead" placeholder="who reports"></div>
-  <div class="fld"><label>Region (optional)</label>
-    <input type="text" name="region" placeholder="e.g. East China"></div>
+  <div class="fld"><label>Lead name (optional)</label>
+    <input type="text" name="lead" placeholder="who leads it"></div>
   <button type="submit">Add group</button>
-</form></div>"""
-    return shell("Groups", "groups", today, body, user=user)
+</form></div>
+{tree}"""
+    return shell("Groups & invites", "groups", today, body,
+                 extra_css=_GROUPS_CSS, user=user)

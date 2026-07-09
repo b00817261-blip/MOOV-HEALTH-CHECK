@@ -1,12 +1,76 @@
 {
-  "teams": [
-    { "team_id": "operations", "team_name": "Operations", "region": "East China",
-      "timezone": "Asia/Shanghai", "manager": "Diego R." },
-    { "team_id": "documentation", "team_name": "Documentation", "region": "East China",
-      "timezone": "Asia/Shanghai", "manager": "Ana M." },
-    { "team_id": "customer-service", "team_name": "Customer Service", "region": "East China",
-      "timezone": "Asia/Shanghai", "manager": "Wei L." },
-    { "team_id": "it", "team_name": "IT", "region": "East China",
-      "timezone": "Asia/Shanghai", "manager": "Sofia K." }
+  "groups": [
+    {
+      "team_id": "__root__",
+      "team_name": "East China desk",
+      "parent": null,
+      "leader": "Derek",
+      "region": "",
+      "allow_link": true,
+      "tokens": {
+        "leader": "876316f466414cc48c66e394305521f2",
+        "member": "c4d9ef82caec4e03932d795f1206a955"
+      }
+    },
+    {
+      "team_id": "operations",
+      "team_name": "Operations",
+      "parent": "__root__",
+      "leader": "Diego R.",
+      "region": "East China",
+      "allow_link": true,
+      "tokens": {
+        "leader": "d93dd9bbf5494d04a8ff9b7a75914e6c",
+        "member": "bee62e965daf46d290eb39ebed99e617"
+      }
+    },
+    {
+      "team_id": "documentation",
+      "team_name": "Documentation",
+      "parent": "__root__",
+      "leader": "Ana M.",
+      "region": "East China",
+      "allow_link": true,
+      "tokens": {
+        "leader": "e8020cc352604a72b00027e6f3c5fa62",
+        "member": "6e579f3eff7e474e91c09c5547031bef"
+      }
+    },
+    {
+      "team_id": "customer-service",
+      "team_name": "Customer Service",
+      "parent": "__root__",
+      "leader": "Wei L.",
+      "region": "East China",
+      "allow_link": true,
+      "tokens": {
+        "leader": "6418e3ab7f124200a3ebe5e7d8bdb8d2",
+        "member": "3860284569f74fd7a44045f9c3e64245"
+      }
+    },
+    {
+      "team_id": "it",
+      "team_name": "IT",
+      "parent": "__root__",
+      "leader": "Sofia K.",
+      "region": "East China",
+      "allow_link": true,
+      "tokens": {
+        "leader": "c48a03aafab148e79fcbb0bbc7dfd6fa",
+        "member": "16989639f23f4754bcf0bce56ee0bee6"
+      }
+    },
+    {
+      "team_id": "cs-night",
+      "team_name": "CS · Night shift",
+      "parent": "customer-service",
+      "leader": "",
+      "region": "East China",
+      "allow_link": true,
+      "tokens": {
+        "leader": "e4bb7936413b4ac5be7ee303192c9e11",
+        "member": "853269c162e54a49a9b71795316b4bdf"
+      }
+    }
   ]
 }

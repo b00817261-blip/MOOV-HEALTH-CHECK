@@ -34,7 +34,8 @@ from urllib.parse import parse_qs, quote, quote_plus, unquote, urlparse
 from .config import load_metric_definitions
 from .focus import build_focus_items
 from .health import build_report
-from .ingest import load_reports_dir, load_roster, save_roster
+from .ingest import load_reports_dir
+from .org import Org, ROOT_ID
 from .report import render
 from .tasks import TaskStore
 from . import pages
@@ -54,13 +55,12 @@ class AppState:
         # The task list lives next to the day folders in the reports dir, so
         # sharing that directory shares the whole website's data.
         self.tasks = TaskStore(str(Path(reports_dir) / "tasks.json"))
+        # The org tree (groups.json == the roster file) + desk settings.
+        self.org = Org(roster_path, str(Path(reports_dir) / "settings.json"))
 
     def roster(self) -> dict:
-        # Re-read per request so teams can be added without a restart.
-        try:
-            return load_roster(self.roster_path)
-        except FileNotFoundError:
-            return {}
+        # The real groups (everything except the synthetic root), keyed by id.
+        return self.org.real_groups()
 
 
 def _today() -> str:
@@ -68,18 +68,22 @@ def _today() -> str:
 
 
 # ---------------------------------------------------------------------------
-# Who is signed in — a cookie carrying role / team / name.
+# Who is signed in — a cookie carrying group / name / leader-flag.
+#
+# The org is a tree of groups (see org.py). A person belongs to one group and
+# is either its leader (the boss of that group's whole subtree) or a member.
+# The head of the desk is simply the leader of the root group.
 #
 # There are deliberately no passwords: the site is designed for a trusted
-# office network or VPN (see README). The cookie only selects which workspace
-# — the manager's or a team member's — the person sees.
+# office network or VPN, and you join through an invite link the boss shares.
+# The cookie only selects which group's workspace you see.
 # ---------------------------------------------------------------------------
 
 _COOKIE_NAME = "moov_user"
 
 
-def make_user_cookie(role: str, team_id: str = "", name: str = "") -> str:
-    value = f"{quote(role)}|{quote(team_id)}|{quote(name)}"
+def make_user_cookie(group_id: str, name: str, is_leader: bool) -> str:
+    value = f"{quote(group_id)}|{quote(name)}|{'1' if is_leader else '0'}"
     return (f"{_COOKIE_NAME}={value}; Path=/; Max-Age=2592000; "
             f"SameSite=Lax; HttpOnly")
 
@@ -89,7 +93,12 @@ def clear_user_cookie() -> str:
 
 
 def parse_user(state: AppState, cookie_header: str | None) -> dict | None:
-    """Return ``{"role", "team_id", "name", "team_name"}`` or None."""
+    """Return the signed-in person, or None.
+
+    Keys: ``group_id``, ``name``, ``is_leader`` (boss of their subtree),
+    ``group_name``, ``is_root`` (the head of the whole desk), and ``scope``
+    — the real group ids this person may see/act on.
+    """
     jar = cookies_mod.SimpleCookie()
     try:
         jar.load(cookie_header or "")
@@ -101,16 +110,29 @@ def parse_user(state: AppState, cookie_header: str | None) -> dict | None:
     parts = morsel.value.split("|")
     if len(parts) != 3:
         return None
-    role, team_id, name = (unquote(p)[:80] for p in parts)
-    if role == "manager":
-        return {"role": "manager", "team_id": "", "name": name, "team_name": ""}
-    if role == "worker":
-        info = state.roster().get(team_id)
-        if info is None:  # team no longer in the roster — sign in again
-            return None
-        return {"role": "worker", "team_id": team_id, "name": name,
-                "team_name": info.get("team_name", team_id)}
-    return None
+    group_id, name, leader_flag = (unquote(p)[:80] for p in parts)
+    groups = state.org.groups()
+    g = groups.get(group_id)
+    if g is None:  # their group is gone — sign in / rejoin
+        return None
+    is_leader = leader_flag == "1"
+    if is_leader:
+        scope = [gid for gid in state.org.subtree_ids(group_id, groups)
+                 if gid != ROOT_ID]
+    else:
+        scope = [] if group_id == ROOT_ID else [group_id]
+    return {
+        "group_id": group_id,
+        "name": name,
+        "is_leader": is_leader,
+        "is_root": group_id == ROOT_ID,
+        "group_name": g.get("team_name", group_id),
+        "scope": scope,
+        # Compatibility shims for existing page code:
+        "role": "manager" if is_leader else "worker",
+        "team_id": group_id,
+        "team_name": g.get("team_name", group_id),
+    }
 
 
 def _shift_date(day: str, delta_days: int) -> str:
@@ -129,11 +151,33 @@ def _hhmm_today(ts: str, day: str) -> str:
     return ""
 
 
-def completion_stats(state: AppState, day: str) -> dict:
+def _scoped_roster(state: AppState, user: dict | None) -> dict:
+    """Ordered ``{group_id: info}`` of the real groups a person oversees."""
+    groups = state.org.groups()
+    if user is None or user.get("is_root"):
+        root = ROOT_ID
+    else:
+        root = user.get("group_id", ROOT_ID)
+    ordered = {}
+    for gid in state.org.subtree_ids(root, groups):
+        if gid != ROOT_ID:
+            ordered[gid] = groups[gid]
+    return ordered
+
+
+def completion_stats(state: AppState, day: str, roster: dict | None = None) -> dict:
     """Everything the manager's 'Daily work completion' dashboard shows,
     assembled purely from the groups' task updates — no separate report."""
-    roster = state.roster()
-    all_tasks = state.tasks.load()
+    full_roster = state.roster()
+    if roster is None:
+        roster = full_roster
+    # Scope the tasks to this person's groups (the head — who oversees the
+    # whole desk — also sees unassigned tasks).
+    is_head = set(roster) == set(full_roster)
+    scope = set(roster)
+    all_tasks = [t for t in state.tasks.load()
+                 if t.get("team_id") in scope
+                 or (is_head and not t.get("team_id"))]
     tasks = [t for t in all_tasks if t.get("status") != "canceled"]
 
     def is_open(t):
@@ -206,14 +250,15 @@ def completion_stats(state: AppState, day: str) -> dict:
                     "level": 0 if upd.get("status") == "done" else 1,
                     "title": t.get("title", ""),
                     "note": upd.get("note", ""),
-                    "channel": tasks_mod.CHANNELS.get(upd.get("channel", ""), ""),
+                    "channel": upd.get("channel", ""),  # already a label
+                    "link": upd.get("link", ""),
                     "friction": friction_label,
                     "friction_note": upd.get("friction_note", ""),
                 })
             updater = next((u.get("by") for _, u in todays if u.get("by")), "")
             group_reports.append({
                 "name": info.get("team_name", tid),
-                "lead": updater or info.get("manager", ""),
+                "lead": updater or info.get("leader", info.get("manager", "")),
                 "done_n": sum(1 for _, u in todays if u.get("status") == "done"),
                 "prog_n": sum(1 for _, u in todays if u.get("status") != "done"),
                 "friction_n": g_friction,
@@ -226,7 +271,7 @@ def completion_stats(state: AppState, day: str) -> dict:
 
         rows.append({
             "id": tid, "name": info.get("team_name", tid),
-            "lead": info.get("manager", ""),
+            "lead": info.get("leader", info.get("manager", "")),
             "done": g_done, "total": len(gtasks),
             "overdue": g_over, "blocked": g_block,
             "filed": updated, "last": last, "level": level,
@@ -293,48 +338,67 @@ def completion_stats(state: AppState, day: str) -> dict:
 
 def dashboard_page(state: AppState, day: str, submitted_team: str = "",
                    user: dict | None = None) -> str:
+    roster = _scoped_roster(state, user)
     return pages.completion_dashboard(
-        completion_stats(state, day), day, user=user, submitted=submitted_team
+        completion_stats(state, day, roster), day, user=user,
+        submitted=submitted_team
     )
 
 
-def _slugify(name: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
-    return slug or "group"
-
-
-def handle_groups_action(state: AppState, form: dict) -> tuple[bool, str]:
-    """Process the manager's POST to /groups. Returns ``(ok, message)``."""
+def handle_groups_action(state: AppState, form: dict, user: dict) -> tuple[bool, str]:
+    """A leader manages the groups in their own subtree. Returns (ok, message)."""
 
     def field(name: str) -> str:
         return (form.get(name, [""])[0] or "").strip()
 
-    roster = state.roster()
+    scope = set(user.get("scope") or [])
     action = field("action")
     if action == "add":
         name = field("name")[:60]
-        if not name:
-            return False, "A group needs a name."
-        slug = base = _slugify(name)
-        n = 2
-        while slug in roster:
-            slug = f"{base}-{n}"
-            n += 1
-        roster[slug] = {
-            "team_id": slug,
-            "team_name": name,
-            "region": field("region")[:60] or "Main",
-            "timezone": "UTC",
-            "manager": field("lead")[:60],
-        }
-        save_roster(state.roster_path, roster)
-        return True, f"Group added: {name}"
+        parent = field("parent") or user.get("group_id", ROOT_ID)
+        # You can only nest a group under your own group or one below it.
+        if not (user.get("is_root") or parent == user.get("group_id")
+                or parent in scope):
+            return False, "You can only add a group inside your own."
+        try:
+            node = state.org.add_group(name, parent, leader=field("lead")[:60],
+                                       region=field("region")[:60])
+        except ValueError as e:
+            return False, str(e)
+        return True, f"Group added: {node['team_name']}"
     if action == "delete":
-        tid = field("id")
-        if roster.pop(tid, None) is None:
-            return False, "That group no longer exists."
-        save_roster(state.roster_path, roster)
-        return True, "Group removed. Its past reports stay on disk."
+        gid = field("id")
+        if gid == ROOT_ID or not (user.get("is_root") or gid in scope):
+            return False, "That group isn't yours to remove."
+        if state.org.delete_group(gid):
+            return True, "Group removed, along with anything nested under it."
+        return False, "That group no longer exists."
+    if action == "rename":
+        gid = field("id")
+        if not (user.get("is_root") or gid in scope):
+            return False, "That group isn't yours."
+        try:
+            ok = state.org.update_group(gid, team_name=field("name")[:60],
+                                        leader=field("lead")[:60])
+        except ValueError as e:
+            return False, str(e)
+        return (True, "Group updated.") if ok else (False, "Group not found.")
+    if action == "toggle_link":
+        gid = field("id")
+        if not (user.get("is_root") or gid in scope):
+            return False, "That group isn't yours."
+        g = state.org.get(gid)
+        if g is None:
+            return False, "Group not found."
+        state.org.update_group(gid, allow_link=not g.get("allow_link", True))
+        return True, "Attachment setting updated."
+    if action == "reinvite":
+        gid, role = field("id"), field("role")
+        if not (user.get("is_root") or gid in scope):
+            return False, "That group isn't yours."
+        if state.org.rotate_token(gid, role) is None:
+            return False, "Could not refresh that link."
+        return True, "New invite link generated — the old one no longer works."
     return False, "Unknown action."
 
 
@@ -356,7 +420,7 @@ def report_json(state: AppState, day: str) -> str:
 def tasks_page(state: AppState, user: dict, team: str = "", status: str = "",
                toast: str = "", error: str = "") -> str:
     return pages.tasks_page(
-        state.roster(), state.tasks.load(), _today(), user=user,
+        _scoped_roster(state, user), state.tasks.load(), _today(), user=user,
         team_filter=team, status_filter=status, toast=toast, error=error,
     )
 
@@ -364,25 +428,38 @@ def tasks_page(state: AppState, user: dict, team: str = "", status: str = "",
 def calendar_page(state: AppState, user: dict, month: str) -> str:
     tasks = state.tasks.load()
     return pages.calendar_page(
-        state.roster(), tasks, tasks_mod.updated_days(tasks),
+        _scoped_roster(state, user), tasks, tasks_mod.updated_days(tasks),
         month, _today(), user=user,
     )
 
 
 def sheet_page(state: AppState, user: dict, day: str) -> str:
-    return pages.sheet_page(completion_stats(state, day), day, user=user)
+    roster = _scoped_roster(state, user)
+    return pages.sheet_page(completion_stats(state, day, roster), day, user=user)
 
 
 def history_page(state: AppState, user: dict, date_from: str = "",
                  date_to: str = "") -> str:
     return pages.history_page(
-        state.tasks.load(), state.roster(), _today(),
+        state.tasks.load(), _scoped_roster(state, user), _today(),
         date_from=date_from, date_to=date_to, user=user,
     )
 
 
+def groups_page(state: AppState, user: dict, toast: str = "",
+                error: str = "", base_url: str = "") -> str:
+    return pages.groups_page(state, user, toast=toast, error=error,
+                             base_url=base_url)
+
+
+def settings_page(state: AppState, user: dict, toast: str = "") -> str:
+    return pages.settings_page(state.org.channels(), _today(), user=user,
+                               toast=toast)
+
+
 def me_page(state: AppState, user: dict, day: str, sent: int = 0) -> str:
-    return pages.me_page(user, state.tasks.load(), day, sent=sent)
+    return pages.me_page(user, state.tasks.load(), day,
+                         channels=state.org.channels(), sent=sent)
 
 
 def handle_updates(state: AppState, form: dict, user: dict, day: str) -> int:
@@ -393,6 +470,10 @@ def handle_updates(state: AppState, form: dict, user: dict, day: str) -> int:
     """
     tids = [t[:40] for t in form.get("tid", [])]
     visible = {t["id"]: t for t in pages.visible_tasks(state.tasks.load(), user)}
+    # Channels are boss-configured, so resolve the picked key to its label now.
+    channel_labels = {c["key"]: c["label"] for c in state.org.channels()}
+    allow_link = {gid: g.get("allow_link", True)
+                  for gid, g in state.org.groups().items()}
 
     def field(name: str) -> str:
         return (form.get(name, [""])[0] or "").strip()
@@ -413,15 +494,19 @@ def handle_updates(state: AppState, form: dict, user: dict, day: str) -> int:
             if friction not in tasks_mod.FRICTION_REASONS:
                 friction = "other"
             friction_note = field(f"fdetail_{tid}")[:300]
-        channel = field(f"channel_{tid}")
-        if channel not in tasks_mod.CHANNELS:
-            channel = ""
+        channel = channel_labels.get(field(f"channel_{tid}"), "")
+        # Optional attachment: a pasted link/reference (email or Teams URL),
+        # only if the group's boss allows it.
+        link = ""
+        if allow_link.get(task.get("team_id"), True):
+            link = field(f"link_{tid}")[:500]
         changed_status = status and status != task.get("status")
-        if not (changed_status or note or friction or channel):
+        if not (changed_status or note or friction or channel or link):
             continue  # nothing meaningful on this card
         state.tasks.record_update(tid, day, status=status, note=note,
                                   friction=friction, friction_note=friction_note,
-                                  channel=channel, by=user.get("name", ""))
+                                  channel=channel, link=link,
+                                  by=user.get("name", ""))
         recorded += 1
     return recorded
 
@@ -432,7 +517,8 @@ def handle_task_action(state: AppState, form: dict, user: dict) -> tuple[bool, s
     def field(name: str) -> str:
         return (form.get(name, [""])[0] or "").strip()
 
-    is_manager = user.get("role") == "manager"
+    is_manager = user.get("is_leader")
+    scope = set(user.get("scope") or [])
     action = field("action")
     due = field("due_date")
     if due and not _DATE_RE.match(due):
@@ -440,10 +526,13 @@ def handle_task_action(state: AppState, form: dict, user: dict) -> tuple[bool, s
     try:
         if action == "add":
             if not is_manager:
-                return False, "Only the manager can add tasks."
+                return False, "Only a group's leader can assign tasks."
+            team_id = field("team_id")
+            if team_id and not (user.get("is_root") or team_id in scope):
+                return False, "You can only assign to a group you manage."
             task = state.tasks.add(
                 title=field("title"),
-                team_id=field("team_id"),
+                team_id=team_id,
                 assignee=field("assignee"),
                 due_date=field("due_date"),
                 notes=field("notes"),
@@ -454,8 +543,8 @@ def handle_task_action(state: AppState, form: dict, user: dict) -> tuple[bool, s
             task = state.tasks.get(field("id"))
             if task is None:
                 return False, "That task no longer exists."
-            if not is_manager and task not in pages.visible_tasks([task], user):
-                return False, "That task belongs to another team."
+            if not pages.visible_tasks([task], user):
+                return False, "That task belongs to another group."
             if is_manager:
                 task = state.tasks.update(task["id"], status=field("status"))
             else:
@@ -469,10 +558,14 @@ def handle_task_action(state: AppState, form: dict, user: dict) -> tuple[bool, s
             return True, f"Task {verb}: {task['title']}"
         if action == "delete":
             if not is_manager:
-                return False, "Only the manager can delete tasks."
-            if state.tasks.delete(field("id")):
-                return True, "Task deleted."
-            return False, "That task no longer exists."
+                return False, "Only a group's leader can remove tasks."
+            task = state.tasks.get(field("id"))
+            if task is None:
+                return False, "That task no longer exists."
+            if not (user.get("is_root") or task.get("team_id") in scope):
+                return False, "That task isn't in a group you manage."
+            state.tasks.delete(task["id"])
+            return True, "Task removed."
     except ValueError as e:
         return False, str(e)
     return False, "Unknown action."
@@ -511,6 +604,14 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
     def _user(self) -> dict | None:
         return parse_user(self.state, self.headers.get("Cookie"))
 
+    def _base_url(self) -> str:
+        host = self.headers.get("Host") or "localhost"
+        return f"http://{host}"
+
+    def _head_exists(self) -> bool:
+        root = self.state.org.get(ROOT_ID)
+        return bool(root and root.get("leader"))
+
     # -- routes -------------------------------------------------------------
     def do_GET(self):  # noqa: N802 (http.server API)
         parsed = urlparse(self.path)
@@ -529,15 +630,28 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
             return
         if path == "/login":
             if user:
-                self._redirect("/" if user["role"] == "manager" else "/me")
+                self._redirect("/" if user["is_leader"] else "/me")
             else:
-                self._send(pages.login_page(self.state.roster()))
+                self._send(pages.login_page(self._head_exists()))
             return
         if path == "/logout":
             self._redirect("/login", set_cookie=clear_user_cookie())
             return
+        if path == "/join":
+            token = (qs.get("link", [""])[0] or qs.get("token", [""])[0]).strip()[:80]
+            token = token.rsplit("=", 1)[-1] if "=" in token else token
+            resolved = self.state.org.resolve_token(token)
+            if resolved is None:
+                self._send(pages.login_page(
+                    self._head_exists(),
+                    error="That invite link is invalid or has been replaced."))
+                return
+            gid, role = resolved
+            g = self.state.org.get(gid)
+            self._send(pages.join_page(g.get("team_name", gid), role, token))
+            return
         if path not in ("/", "/me", "/tasks", "/calendar", "/sheet",
-                        "/history", "/groups"):
+                        "/history", "/groups", "/settings"):
             self._send("Not found.", "text/plain; charset=utf-8", 404)
             return
 
@@ -545,25 +659,22 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         if user is None:
             self._redirect("/login")
             return
-        is_manager = user["role"] == "manager"
+        is_leader = user["is_leader"]
 
         if path == "/":
-            if not is_manager:
+            if not is_leader:
                 self._redirect("/me")
                 return
             submitted = (qs.get("submitted", [""])[0])[:80]
             self._send(dashboard_page(self.state, day, submitted, user=user))
         elif path == "/me":
-            if is_manager:
-                self._redirect(f"/?date={day}")
-                return
             try:
                 sent = int((qs.get("sent", ["0"])[0] or "0")[:4])
             except ValueError:
                 sent = 0
             self._send(me_page(self.state, user, day, sent=sent))
         elif path == "/tasks":
-            team = (qs.get("team", [""])[0])[:80] if is_manager else ""
+            team = (qs.get("team", [""])[0])[:80] if is_leader else ""
             status = (qs.get("status", [""])[0])[:20]
             toast = (qs.get("ok", [""])[0])[:120]
             error = (qs.get("err", [""])[0])[:120]
@@ -575,12 +686,12 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
                 return
             self._send(calendar_page(self.state, user, month))
         elif path == "/sheet":
-            if not is_manager:
+            if not is_leader:
                 self._redirect("/me")
                 return
             self._send(sheet_page(self.state, user, day))
         elif path == "/history":
-            if not is_manager:
+            if not is_leader:
                 self._redirect("/me")
                 return
             date_from = (qs.get("from", [""])[0])[:10]
@@ -591,17 +702,24 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
                 return
             self._send(history_page(self.state, user, date_from, date_to))
         elif path == "/groups":
-            if not is_manager:
+            if not is_leader:
                 self._redirect("/me")
                 return
             toast = (qs.get("ok", [""])[0])[:120]
             error = (qs.get("err", [""])[0])[:120]
-            self._send(pages.groups_page(self.state.roster(), _today(),
-                                         user=user, toast=toast, error=error))
+            self._send(groups_page(self.state, user, toast, error,
+                                   base_url=self._base_url()))
+        elif path == "/settings":
+            if not is_leader:
+                self._redirect("/me")
+                return
+            toast = (qs.get("ok", [""])[0])[:120]
+            self._send(settings_page(self.state, user, toast))
 
     def do_POST(self):  # noqa: N802
         path = urlparse(self.path).path
-        if path not in ("/updates", "/tasks", "/login", "/groups"):
+        if path not in ("/updates", "/tasks", "/login", "/join", "/groups",
+                        "/settings"):
             self._send("Not found.", "text/plain; charset=utf-8", 404)
             return
         length = min(int(self.headers.get("Content-Length", 0) or 0), 1_000_000)
@@ -612,20 +730,37 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
             return (form.get(name, [""])[0] or "").strip()
 
         if path == "/login":
-            role = field("role")
             name = field("name")[:60]
-            if role == "manager":
-                self._redirect("/", set_cookie=make_user_cookie("manager", "", name))
-            elif role == "worker":
-                team = field("team")[:80]
-                if team not in self.state.roster():
-                    self._send(pages.login_page(
-                        self.state.roster(), error="Please choose your team from the list."))
-                else:
-                    self._redirect("/me", set_cookie=make_user_cookie("worker", team, name))
-            else:
+            if not name:
                 self._send(pages.login_page(
-                    self.state.roster(), error="Please pick a workspace."))
+                    self._head_exists(), error="Please enter your name."))
+                return
+            # The head is the leader of the root group.
+            self.state.org.update_group(ROOT_ID, leader=name)
+            self._redirect("/", set_cookie=make_user_cookie(ROOT_ID, name, True))
+            return
+
+        if path == "/join":
+            token = field("token")[:80]
+            name = field("name")[:60]
+            resolved = self.state.org.resolve_token(token)
+            if resolved is None:
+                self._send(pages.login_page(
+                    self._head_exists(),
+                    error="That invite link is invalid or has been replaced."))
+                return
+            gid, role = resolved
+            g = self.state.org.get(gid)
+            if not name:
+                self._send(pages.join_page(
+                    g.get("team_name", gid), role, token,
+                    error="Please enter your name to join."))
+                return
+            is_leader = role == "leader"
+            if is_leader and not g.get("leader"):
+                self.state.org.update_group(gid, leader=name)
+            self._redirect("/" if is_leader else "/me",
+                           set_cookie=make_user_cookie(gid, name, is_leader))
             return
 
         user = self._user()
@@ -634,12 +769,21 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/groups":
-            if user["role"] != "manager":
+            if not user["is_leader"]:
                 self._redirect("/me")
                 return
-            ok, message = handle_groups_action(self.state, form)
+            ok, message = handle_groups_action(self.state, form, user)
             key = "ok" if ok else "err"
             self._redirect(f"/groups?{key}={quote_plus(message)}")
+            return
+
+        if path == "/settings":
+            if not user["is_leader"]:
+                self._redirect("/me")
+                return
+            if field("action") == "channels":
+                self.state.org.save_channels(form.get("channel", []))
+            self._redirect("/settings?ok=" + quote_plus("Settings saved."))
             return
 
         if path == "/tasks":
@@ -653,10 +797,7 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
                 self._redirect(f"/tasks?{back}{sep}{key}={quote_plus(message)}")
             return
 
-        # /updates — a group lead submits the day's task updates in one go.
-        if user["role"] != "worker":
-            self._redirect("/")
-            return
+        # /updates — a lead/member submits the day's task updates in one go.
         recorded = handle_updates(self.state, form, user, _today())
         self._redirect(f"/me?sent={max(recorded, 1)}")
 

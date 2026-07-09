@@ -1,0 +1,20 @@
+{
+  "channels": [
+    {
+      "key": "email",
+      "label": "Email"
+    },
+    {
+      "key": "smartmoov",
+      "label": "SmartMOOV"
+    },
+    {
+      "key": "teams",
+      "label": "Teams"
+    },
+    {
+      "key": "note",
+      "label": "Note"
+    }
+  ]
+}
