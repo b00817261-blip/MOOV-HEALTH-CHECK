@@ -1,0 +1,31 @@
+# Render Blueprint — one-click deploy of the MOOV Health Check website.
+#
+# In the Render dashboard: New → Blueprint → pick this repo. Render reads this
+# file, builds the app, and gives you a public https URL. No credit card needed
+# for the free plan.
+#
+# ⚠️ Free plan note: the free web service has an *ephemeral* disk and sleeps
+# after ~15 min idle, so the JSON data (groups, tasks, updates) resets on
+# redeploy/restart — perfect for a prototype/demo. To keep data permanently,
+# uncomment the `disk:` block below (Render disks are a paid add-on) and the app
+# will store everything on the mounted volume instead.
+services:
+  - type: web
+    name: moov-health-check
+    runtime: python
+    plan: free
+    buildCommand: pip install -e .
+    startCommand: moov-health-check serve
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      # Where the app keeps its data. With a persistent disk (below), point
+      # this at the mount path so nothing is lost between deploys.
+      - key: MOOV_DATA_DIR
+        value: reports
+    # --- Uncomment for permanent storage (paid disk) ---
+    # disk:
+    #   name: moov-data
+    #   mountPath: /var/moov
+    #   sizeGB: 1
+    # and set MOOV_DATA_DIR to /var/moov above.

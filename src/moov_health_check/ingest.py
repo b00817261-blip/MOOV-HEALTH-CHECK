@@ -77,10 +77,16 @@ def load_roster(roster_path: str) -> dict:
     each day, so the manager can see who hasn't filed yet.
     """
     data = json.loads(Path(roster_path).read_text(encoding="utf-8"))
-    teams = data.get("teams", data)
+    if isinstance(data, dict):
+        # The website stores the org as {"groups": [...]}; the CLI roster was
+        # {"teams": [...]}. Accept either, or a bare list.
+        teams = data.get("teams") or data.get("groups") or []
+    else:
+        teams = data
     # Skip the org's synthetic root node (ids like "__root__").
     return {str(t["team_id"]): t for t in teams
-            if not str(t["team_id"]).startswith("__")}
+            if isinstance(t, dict) and t.get("team_id")
+            and not str(t["team_id"]).startswith("__")}
 
 
 def load_reports_dir(

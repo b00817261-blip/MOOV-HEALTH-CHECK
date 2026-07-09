@@ -27,6 +27,7 @@ Running with no subcommand defaults to ``report``.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from datetime import datetime, timezone
 
@@ -108,11 +109,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run the website: a dashboard for the manager, a form for the teams.",
         description="Serve the MOOV Health Check website (stdlib only, no frameworks).",
     )
-    sv.add_argument("--reports-dir", "-R", default="reports", help="Shared reports directory (default: ./reports).")
-    sv.add_argument("--roster", default="config/teams.json", help="Roster JSON (default: config/teams.json).")
+    # On hosts like Render/Railway/Fly the platform picks the port and data
+    # location via environment variables, so honour those as the defaults.
+    sv.add_argument("--reports-dir", "-R",
+                    default=os.environ.get("MOOV_DATA_DIR", "reports"),
+                    help="Shared reports directory (default: ./reports or $MOOV_DATA_DIR).")
+    sv.add_argument("--roster", default=os.environ.get("MOOV_ROSTER", "config/teams.json"),
+                    help="Roster JSON (default: config/teams.json or $MOOV_ROSTER).")
     sv.add_argument("--config", "-c", help="Path to a custom thresholds JSON file.")
-    sv.add_argument("--host", default="0.0.0.0", help="Bind address (default: 0.0.0.0 — reachable on your network).")
-    sv.add_argument("--port", "-p", type=int, default=8000, help="Port (default: 8000).")
+    sv.add_argument("--host", default=os.environ.get("HOST", "0.0.0.0"),
+                    help="Bind address (default: 0.0.0.0 — reachable on your network).")
+    sv.add_argument("--port", "-p", type=int, default=int(os.environ.get("PORT", "8000")),
+                    help="Port (default: 8000, or $PORT when the host sets it).")
     return p
 
 

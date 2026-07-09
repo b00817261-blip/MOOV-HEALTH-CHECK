@@ -72,3 +72,15 @@ def test_channels_settings_roundtrip(org):
     assert org.channels()[1] == {"key": "smartmoov", "label": "SmartMOOV"}
     # Empty falls back to defaults.
     assert len(org.save_channels(["", "  "])) == 3
+
+
+def test_load_roster_reads_the_org_groups_shape(tmp_path):
+    """The website writes {"groups": [...]} to the roster file; the CLI's
+    load_roster must read it (and skip the synthetic root)."""
+    from moov_health_check.ingest import load_roster
+    org = Org(str(tmp_path / "teams.json"), str(tmp_path / "settings.json"))
+    org.add_group("Operations", ROOT_ID, leader="Diego")
+    org.update_group(ROOT_ID, leader="Head")  # forces a save incl. the root
+    roster = load_roster(str(tmp_path / "teams.json"))
+    assert set(roster) == {"operations"}          # root is skipped
+    assert roster["operations"]["team_name"] == "Operations"
