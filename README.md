@@ -22,7 +22,15 @@ install in any timezone: laptop, server, container, or cron job.
 python -m moov_health_check serve
 ```
 
-Then open **http://localhost:8000** — that's it. No frameworks, no database,
+Then open **http://localhost:8000** — sign in as the manager, add your groups
+under **👥 Groups**, and your group leads can start reporting. To try it with
+example data first:
+
+```bash
+python -m moov_health_check serve --reports-dir data/example/reports --roster data/example/teams.json
+```
+
+Open **http://localhost:8000** — that's it. No frameworks, no database,
 nothing else to install.
 
 The site opens on a **sign-in screen with two doors** — one website, two
@@ -32,8 +40,9 @@ completely different workspaces:
 
 | Page | What it does |
 |------|--------------|
-| `/` | The daily dashboard: fleet health, work focus, every team's report, and who hasn't reported yet. Browse any date. |
-| `/tasks` | The **employee task list**: add a task with a team/person and a deadline, watch statuses move, delete what's obsolete. Status chips, overdue flags, and Trello-style "per status" / "per due date" summary bars. |
+| `/` | **Daily work completion** — the manager's live dashboard: completion tiles (done / pending / overdue / blocked), a roster row per group with a progress bar, overdue flags and last activity, the outstanding-work list, and a daily checklist with percentages. |
+| `/groups` | Set up the desk: add or remove the **groups** that report to you (Operations, Documentation, IT, …) and their leads. Starts empty — you model your real org, nothing is pre-invented. |
+| `/tasks` | The **task board**: assign a task to a group/person with a deadline and watch statuses move. The manager assigns and removes — each group ticks its own work. |
 | `/sheet` | A printable **Daily Status Report** for any date: KPI tiles (fleet score, teams reported, task completion, blockers), completed activities, in-progress tasks, issues & escalations, and today's objectives. Print to PDF straight from the browser. |
 | `/calendar` | A month view of every deadline and every filed report — click a day to open its sheet. |
 | `/history` | **Saved reports**: every day the teams have reported, plus a consolidated table over any date range. |
@@ -70,9 +79,9 @@ Submissions land as plain JSON files in the reports directory, so the website
 and the CLI commands below are fully interchangeable — teams can use the form
 while a script feeds in numbers from another system.
 
-> ⚠️ The built-in server has no login — run it on a trusted network (office
-> LAN/VPN), or put it behind a reverse proxy with authentication if it must be
-> internet-facing.
+> ⚠️ The sign-in separates workspaces, not secrets — there are no passwords.
+> Run it on a trusted network (office LAN/VPN), or put it behind a reverse
+> proxy with authentication if it must be internet-facing.
 
 ---
 
@@ -176,7 +185,7 @@ The report shows:
 Try it instantly with the bundled sample day (7 of 9 hubs reported):
 
 ```bash
-python -m moov_health_check report --reports-dir data/sample_reports --date 2026-07-08
+python -m moov_health_check report --reports-dir data/example/reports --roster data/example/teams.json --date 2026-07-09
 ```
 
 Or with zero files at all:
@@ -311,7 +320,7 @@ src/moov_health_check/
   cli.py       # `serve`, `submit`, and `report` subcommands
 config/teams.json            # the team roster (who must report daily)
 config/thresholds.json       # the default KPI catalogue
-data/sample_reports/         # a sample day of team submissions
+data/example/                # a one-desk example (4 groups, tasks, one day of reports)
 data/sample_metrics.json     # example single-file input (JSON)
 data/sample_metrics.csv      # example single-file input (CSV)
 tests/                       # pytest suite

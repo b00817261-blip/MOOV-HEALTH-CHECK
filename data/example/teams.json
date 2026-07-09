@@ -1,0 +1,12 @@
+{
+  "teams": [
+    { "team_id": "operations", "team_name": "Operations", "region": "East China",
+      "timezone": "Asia/Shanghai", "manager": "Diego R." },
+    { "team_id": "documentation", "team_name": "Documentation", "region": "East China",
+      "timezone": "Asia/Shanghai", "manager": "Ana M." },
+    { "team_id": "customer-service", "team_name": "Customer Service", "region": "East China",
+      "timezone": "Asia/Shanghai", "manager": "Wei L." },
+    { "team_id": "it", "team_name": "IT", "region": "East China",
+      "timezone": "Asia/Shanghai", "manager": "Sofia K." }
+  ]
+}

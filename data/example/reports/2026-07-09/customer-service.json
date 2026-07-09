@@ -1,0 +1,23 @@
+{
+  "team_id": "customer-service",
+  "team_name": "Customer Service",
+  "region": "East China",
+  "timezone": "Asia/Shanghai",
+  "manager": "Wei L.",
+  "report_date": "2026-07-09",
+  "metrics": {
+    "sla_attainment": 93.9,
+    "open_p1_incidents": 0,
+    "backlog_jobs": 26,
+    "staffing_level": 88,
+    "csat": 87,
+    "error_rate": 1.2,
+    "safety_events": 0
+  },
+  "prev_metrics": {},
+  "accomplished": "Cleared week-28 resolved tickets; Metro call summarised.",
+  "blockers": "LIDL thread past SLA — need a decision on the demurrage waiver.",
+  "plan": "Answer LIDL first, refresh PEPCO daily report by 17:00.",
+  "submitted_by": "Wei L.",
+  "submitted_at": "2026-07-09 06:41 UTC"
+}

@@ -36,7 +36,7 @@ from pathlib import Path
 from .config import load_metric_definitions
 from .focus import build_focus_items
 from .health import build_report
-from .ingest import load_reports_dir, load_roster
+from .ingest import load_reports_dir, load_roster, save_roster
 from .models import Direction
 from .report import render
 from .tasks import TaskStore
@@ -125,40 +125,167 @@ def _shift_date(day: str, delta_days: int) -> str:
 # Page builders
 # ---------------------------------------------------------------------------
 
+def _hhmm_today(ts: str, day: str) -> str:
+    """'YYYY-MM-DD HH:MM UTC' -> 'HH:MM' if it happened on ``day``, else ''."""
+    if ts and ts.startswith(day) and len(ts) >= 16:
+        return ts[11:16]
+    return ""
+
+
+def completion_stats(state: AppState, day: str) -> dict:
+    """Everything the manager's 'Daily work completion' dashboard shows."""
+    roster = state.roster()
+    snapshots, _ = load_reports_dir(state.reports_dir, day, roster)
+    snap_by = {s.team_id: s for s in snapshots}
+    tasks = [t for t in state.tasks.load() if t.get("status") != "canceled"]
+
+    def is_open(t):
+        return t.get("status") in ("todo", "doing")
+
+    def is_overdue(t):
+        return is_open(t) and t.get("due_date") and t["due_date"] < day
+
+    done = [t for t in tasks if t.get("status") == "done"]
+    blocked = [t for t in tasks if t.get("status") == "waiting"]
+    overdue = [t for t in tasks if is_overdue(t)]
+    pending = [t for t in tasks if is_open(t) and not is_overdue(t)]
+
+    rows = []
+    on_track = active_groups = filed_count = clean_count = 0
+    for tid, info in roster.items():
+        gtasks = [t for t in tasks if t.get("team_id") == tid]
+        g_done = sum(1 for t in gtasks if t.get("status") == "done")
+        g_over = sum(1 for t in gtasks if is_overdue(t))
+        g_block = sum(1 for t in gtasks if t.get("status") == "waiting")
+        snap = snap_by.get(tid)
+        filed = snap is not None
+
+        times = [_hhmm_today(t.get("updated_at", ""), day) for t in gtasks]
+        if filed:
+            times.append(_hhmm_today(snap.submitted_at, day))
+        times = [x for x in times if x]
+        last = max(times) if times else ""
+
+        if g_over >= 3 or (not filed and not last):
+            level = 2
+        elif g_over or not filed:
+            level = 1
+        else:
+            level = 0
+        if filed and not g_over:
+            on_track += 1
+        if last:
+            active_groups += 1
+        if filed:
+            filed_count += 1
+            if not snap.blockers:
+                clean_count += 1
+        rows.append({
+            "id": tid, "name": info.get("team_name", tid),
+            "lead": info.get("manager", ""),
+            "done": g_done, "total": len(gtasks),
+            "overdue": g_over, "blocked": g_block,
+            "filed": filed, "last": last, "level": level,
+        })
+    rows.sort(key=lambda r: (r["level"], r["name"].lower()))
+
+    g_total = len(roster)
+    if tasks:
+        pct = round(100 * len(done) / len(tasks))
+    else:
+        pct = round(100 * filed_count / g_total) if g_total else 0
+
+    team_names = {tid: info.get("team_name", tid) for tid, info in roster.items()}
+    outstanding = []
+    for t in sorted((t for t in tasks if t.get("status") in ("todo", "doing", "waiting")),
+                    key=lambda t: (not is_overdue(t), t.get("due_date") or "9999-99-99")):
+        due = t.get("due_date") or ""
+        if is_overdue(t):
+            days_late = (date_cls.fromisoformat(day) - date_cls.fromisoformat(due)).days
+            note, level = f"{days_late}d overdue", 2
+        elif t.get("status") == "waiting":
+            note, level = "waiting" + (f" · due {due}" if due else ""), 1
+        elif due == day:
+            note, level = "due today", 1
+        elif due:
+            note, level = f"due {due}", 0
+        else:
+            note, level = "no due date", 0
+        owner = t.get("assignee") or team_names.get(t.get("team_id", ""), "") or "unassigned"
+        outstanding.append({"title": t.get("title", ""), "group": owner,
+                            "note": note, "level": level})
+    outstanding = outstanding[:6]
+
+    open_all = len(pending) + len(overdue) + len(blocked)
+    checklist = [
+        ("Daily reports filed", round(100 * filed_count / g_total) if g_total else 0),
+        ("Tasks on schedule",
+         round(100 * len(pending) / open_all) if open_all else 100),
+        ("Groups active today",
+         round(100 * active_groups / g_total) if g_total else 0),
+        ("No blockers reported",
+         round(100 * clean_count / g_total) if g_total else 0),
+    ]
+
+    d = date_cls.fromisoformat(day)
+    day_label = f"{d.strftime('%A')}, {d.day} {d.strftime('%B')} · {g_total} group(s)"
+    return {
+        "day_label": day_label,
+        "generated_at": datetime.now(timezone.utc).strftime("%H:%M UTC"),
+        "tiles": {"done": len(done), "total": len(tasks),
+                  "pending": len(pending), "overdue": len(overdue),
+                  "blocked": len(blocked)},
+        "pct": pct, "on_track": on_track, "groups_total": g_total,
+        "rows": rows, "outstanding": outstanding, "checklist": checklist,
+        "prev_day": _shift_date(day, -1), "next_day": _shift_date(day, 1),
+    }
+
+
 def dashboard_page(state: AppState, day: str, submitted_team: str = "",
                    user: dict | None = None) -> str:
-    roster = state.roster()
-    snapshots, missing = load_reports_dir(state.reports_dir, day, roster)
-
-    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    prelim = build_report(snapshots, state.definitions, day, generated_at)
-    focus_items = build_focus_items(prelim.teams)
-    report = build_report(
-        snapshots, state.definitions, day, generated_at, focus_items, missing
+    return pages.completion_dashboard(
+        completion_stats(state, day), day, user=user, submitted=submitted_team
     )
 
-    toast = ""
-    if submitted_team:
-        toast = (
-            f'<div class="nav" style="border-left:4px solid #1e9e5a;padding-left:10px">'
-            f"✓ Report received from <b>&nbsp;{html.escape(submitted_team)}</b></div>"
-        )
-    name = (user or {}).get("name") or ""
-    who = f"Manager · {html.escape(name)}" if name else "Manager"
-    nav = f"""{toast}<nav class="nav" style="border-top:3px solid #5b9cf5;padding-top:10px">
-  <a href="/sheet?date={day}">📄 Daily sheet</a>
-  <a href="/tasks">✅ Tasks</a>
-  <a href="/calendar?month={day[:7]}">🗓 Calendar</a>
-  <a href="/history">🗂 Saved reports</a>
-  <span class="spacer"></span>
-  <a href="/?date={_shift_date(day, -1)}">← {_shift_date(day, -1)}</a>
-  <a href="/?date={_shift_date(day, 1)}">{_shift_date(day, 1)} →</a>
-  <a href="/report.json?date={day}">JSON</a>
-  <span style="font-size:10px;letter-spacing:1px;text-transform:uppercase;font-weight:700;
-    color:#5b9cf5;border:1px solid #5b9cf5;border-radius:20px;padding:3px 10px">{who}</span>
-  <a href="/logout" style="border:0;background:none;color:#6b7078;font-size:12px">Sign out</a>
-</nav>"""
-    return render(report, "html", nav_html=nav)
+
+def _slugify(name: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    return slug or "group"
+
+
+def handle_groups_action(state: AppState, form: dict) -> tuple[bool, str]:
+    """Process the manager's POST to /groups. Returns ``(ok, message)``."""
+
+    def field(name: str) -> str:
+        return (form.get(name, [""])[0] or "").strip()
+
+    roster = state.roster()
+    action = field("action")
+    if action == "add":
+        name = field("name")[:60]
+        if not name:
+            return False, "A group needs a name."
+        slug = base = _slugify(name)
+        n = 2
+        while slug in roster:
+            slug = f"{base}-{n}"
+            n += 1
+        roster[slug] = {
+            "team_id": slug,
+            "team_name": name,
+            "region": field("region")[:60] or "Main",
+            "timezone": "UTC",
+            "manager": field("lead")[:60],
+        }
+        save_roster(state.roster_path, roster)
+        return True, f"Group added: {name}"
+    if action == "delete":
+        tid = field("id")
+        if roster.pop(tid, None) is None:
+            return False, "That group no longer exists."
+        save_roster(state.roster_path, roster)
+        return True, "Group removed. Its past reports stay on disk."
+    return False, "Unknown action."
 
 
 def _full_report(state: AppState, day: str):
@@ -539,7 +666,7 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
             self._redirect("/login", set_cookie=clear_user_cookie())
             return
         if path not in ("/", "/me", "/submit", "/tasks", "/calendar", "/sheet",
-                        "/history"):
+                        "/history", "/groups"):
             self._send("Not found.", "text/plain; charset=utf-8", 404)
             return
 
@@ -592,10 +719,18 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
                 self._send("Bad date — use YYYY-MM-DD.", "text/plain; charset=utf-8", 400)
                 return
             self._send(history_page(self.state, user, date_from, date_to))
+        elif path == "/groups":
+            if not is_manager:
+                self._redirect("/me")
+                return
+            toast = (qs.get("ok", [""])[0])[:120]
+            error = (qs.get("err", [""])[0])[:120]
+            self._send(pages.groups_page(self.state.roster(), _today(),
+                                         user=user, toast=toast, error=error))
 
     def do_POST(self):  # noqa: N802
         path = urlparse(self.path).path
-        if path not in ("/submit", "/tasks", "/login"):
+        if path not in ("/submit", "/tasks", "/login", "/groups"):
             self._send("Not found.", "text/plain; charset=utf-8", 404)
             return
         length = min(int(self.headers.get("Content-Length", 0) or 0), 1_000_000)
@@ -625,6 +760,15 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         user = self._user()
         if user is None:
             self._redirect("/login")
+            return
+
+        if path == "/groups":
+            if user["role"] != "manager":
+                self._redirect("/me")
+                return
+            ok, message = handle_groups_action(self.state, form)
+            key = "ok" if ok else "err"
+            self._redirect(f"/groups?{key}={quote_plus(message)}")
             return
 
         if path == "/tasks":

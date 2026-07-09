@@ -166,6 +166,7 @@ def nav(active: str, day: str, user: dict | None = None) -> str:
             ("tasks", "/tasks", "✅ Tasks"),
             ("calendar", f"/calendar?month={month}", "🗓 Calendar"),
             ("history", "/history", "🗂 Saved reports"),
+            ("groups", "/groups", "👥 Groups"),
         ]
         name = user.get("name") or ""
         who = f"Manager · {esc(name)}" if name else "Manager"
@@ -290,7 +291,7 @@ def tasks_page(roster: dict, tasks: list, today: str, user: dict | None = None,
 
     filters = ['<div class="filters">']
     if can_manage:
-        filters += ['<span class="muted">Team:</span>',
+        filters += ['<span class="muted">Group:</span>',
                     filt_link("All", "", status_filter, on=not team_filter)]
         for tid, name in team_names.items():
             filters.append(filt_link(name, tid, status_filter, on=team_filter == tid))
@@ -305,16 +306,16 @@ def tasks_page(roster: dict, tasks: list, today: str, user: dict | None = None,
     # Add-task form — the manager puts project names / deadlines.
     addform = ""
     if can_manage:
-        team_opts = ['<option value="">— any team —</option>'] + [
+        team_opts = ['<option value="">— any group —</option>'] + [
             f'<option value="{esc(tid)}">{esc(name)}</option>'
             for tid, name in team_names.items()
         ]
-        addform = f"""<div class="card"><h3>➕ Add a task <span class="muted">(project name, who, deadline)</span></h3>
+        addform = f"""<div class="card"><h3>➕ Assign a task <span class="muted">(project name, who, deadline)</span></h3>
 <form method="post" action="/tasks" class="addform">
   <input type="hidden" name="action" value="add">
   <div class="fld" style="flex:2;min-width:220px"><label>Task</label>
-    <input type="text" name="title" required placeholder="e.g. Prepare Q3 fleet forecast" style="width:100%"></div>
-  <div class="fld"><label>Assign to team</label>
+    <input type="text" name="title" required placeholder="e.g. Refresh PEPCO daily report" style="width:100%"></div>
+  <div class="fld"><label>Assign to group</label>
     <select name="team_id">{''.join(team_opts)}</select></div>
   <div class="fld"><label>Person (optional)</label>
     <input type="text" name="assignee" placeholder="name"></div>
@@ -344,32 +345,29 @@ def tasks_page(roster: dict, tasks: list, today: str, user: dict | None = None,
             who = f'{esc(t["assignee"])} <span class="muted">({esc(who)})</span>'
         else:
             who = esc(who)
-        opts = "".join(
-            f'<option value="{k}"{" selected" if t.get("status") == k else ""}>{v}</option>'
-            for k, v in tasks_mod.STATUSES.items()
-        )
-        done_btn = ""
-        if t.get("status") not in ("done", "canceled"):
-            done_btn = (f'<form method="post" action="/tasks" class="rowform">'
-                        f'<input type="hidden" name="action" value="status">'
-                        f'<input type="hidden" name="id" value="{tid}">'
-                        f'<input type="hidden" name="status" value="done">'
-                        f'<input type="hidden" name="back" value="{esc(back)}">'
-                        f'<button type="submit" title="Mark done">✓ Done</button></form>')
-        delete_form = ""
         if can_manage:
-            delete_form = (f'<form method="post" action="/tasks" class="rowform" '
-                           f'onsubmit="return confirm(\'Delete this task?\')">'
-                           f'<input type="hidden" name="action" value="delete">'
-                           f'<input type="hidden" name="id" value="{tid}">'
-                           f'<input type="hidden" name="back" value="{esc(back)}">'
-                           f'<button type="submit" class="danger" title="Delete">✕</button></form>')
-        rows.append(f"""<tr>
-<td><b>{esc(t.get('title', ''))}</b>{f'<div class="muted" style="font-size:12px">{esc(t["notes"])}</div>' if t.get('notes') else ''}</td>
-<td>{who}</td>
-<td>{status_chip(t.get('status', 'todo'))}</td>
-<td>{due_html}</td>
-<td><div class="rowform">
+            # The manager assigns and removes work — each group updates its
+            # own status, so there is nothing to "tick" here.
+            actions = (f'<form method="post" action="/tasks" class="rowform" '
+                       f'onsubmit="return confirm(\'Delete this task?\')">'
+                       f'<input type="hidden" name="action" value="delete">'
+                       f'<input type="hidden" name="id" value="{tid}">'
+                       f'<input type="hidden" name="back" value="{esc(back)}">'
+                       f'<button type="submit" class="danger" title="Delete">✕ Remove</button></form>')
+        else:
+            opts = "".join(
+                f'<option value="{k}"{" selected" if t.get("status") == k else ""}>{v}</option>'
+                for k, v in tasks_mod.STATUSES.items()
+            )
+            done_btn = ""
+            if t.get("status") not in ("done", "canceled"):
+                done_btn = (f'<form method="post" action="/tasks" class="rowform">'
+                            f'<input type="hidden" name="action" value="status">'
+                            f'<input type="hidden" name="id" value="{tid}">'
+                            f'<input type="hidden" name="status" value="done">'
+                            f'<input type="hidden" name="back" value="{esc(back)}">'
+                            f'<button type="submit" title="Mark done">✓ Done</button></form>')
+            actions = f"""<div class="rowform">
   <form method="post" action="/tasks" class="rowform">
     <input type="hidden" name="action" value="status">
     <input type="hidden" name="id" value="{tid}">
@@ -378,8 +376,13 @@ def tasks_page(roster: dict, tasks: list, today: str, user: dict | None = None,
     <button type="submit" class="ghost">Save</button>
   </form>
   {done_btn}
-  {delete_form}
-</div></td></tr>""")
+</div>"""
+        rows.append(f"""<tr>
+<td><b>{esc(t.get('title', ''))}</b>{f'<div class="muted" style="font-size:12px">{esc(t["notes"])}</div>' if t.get('notes') else ''}</td>
+<td>{who}</td>
+<td>{status_chip(t.get('status', 'todo'))}</td>
+<td>{due_html}</td>
+<td>{actions}</td></tr>""")
 
     if not rows:
         empty = ("No tasks here yet — add the first one above." if can_manage
@@ -393,11 +396,14 @@ def tasks_page(roster: dict, tasks: list, today: str, user: dict | None = None,
         toast_html = f'<div class="toast error">⚠ {esc(error)}</div>'
 
     if can_manage:
-        title = "✅ Employee task list"
-        sub = "You assign the work and the deadline — the teams update the status and tick it done."
+        title = "✅ Task board"
+        sub = ("You assign the work and the deadline — each group updates its own "
+               "status and ticks it done. Watch it move from here.")
+        last_col = "Manage"
     else:
         title = f"✅ {esc((user or {}).get('team_name') or 'My')} tasks"
         sub = "What your manager has assigned to you — update the status as you go and tick it done."
+        last_col = "Update"
     body = f"""<h1>{title}</h1>
 <div class="sub">{sub}</div>
 {toast_html}
@@ -406,7 +412,7 @@ def tasks_page(roster: dict, tasks: list, today: str, user: dict | None = None,
 {''.join(filters)}
 <div class="card" style="padding:0 8px">
 <table>
-<thead><tr><th>Task</th><th>Assigned to</th><th>Status</th><th>Due date</th><th>Update</th></tr></thead>
+<thead><tr><th>Task</th><th>Assigned to</th><th>Status</th><th>Due date</th><th>{last_col}</th></tr></thead>
 <tbody>{''.join(rows)}</tbody>
 </table></div>"""
     return shell("Tasks", "tasks", today, body, user=user)
@@ -747,11 +753,21 @@ def history_page(reports_by_day: dict, load_day, roster: dict, today: str,
 # ---------------------------------------------------------------------------
 
 def login_page(roster: dict, error: str = "") -> str:
-    team_opts = ['<option value="">— choose your team —</option>'] + [
-        f'<option value="{esc(tid)}">{esc(info.get("team_name", tid))} '
-        f'({esc(info.get("region", ""))})</option>'
-        for tid, info in roster.items()
-    ]
+    if roster:
+        team_opts = ['<option value="">— choose your group —</option>'] + [
+            f'<option value="{esc(tid)}">{esc(info.get("team_name", tid))}</option>'
+            for tid, info in roster.items()
+        ]
+        worker_form = f"""<form method="post" action="/login">
+      <input type="hidden" name="role" value="worker">
+      <select name="team" required>{''.join(team_opts)}</select>
+      <input type="text" name="name" placeholder="Your name (optional)">
+      <button type="submit">Enter my workspace →</button>
+    </form>"""
+    else:
+        worker_form = ('<div class="desc" style="margin:0">Your manager has not '
+                       "added any groups yet — ask them to sign in and set up "
+                       "the desk first.</div>")
     error_html = f'<div class="toast error">⚠ {esc(error)}</div>' if error else ""
     body = f"""<div class="login-hero">
   <h1>🚦 MOOV daily reporting</h1>
@@ -760,9 +776,9 @@ def login_page(roster: dict, error: str = "") -> str:
 {error_html}
 <div class="grid2" style="max-width:820px;margin:0 auto">
   <div class="card login-card manager">
-    <h3>👔 I'm the operations manager</h3>
-    <div class="desc">See the live dashboard, assign tasks &amp; deadlines,
-      read every team's report, print the daily sheet.</div>
+    <h3>👔 I'm the manager</h3>
+    <div class="desc">The live completion dashboard, task assignment
+      &amp; deadlines, every group's report, the printable daily sheet.</div>
     <form method="post" action="/login">
       <input type="hidden" name="role" value="manager">
       <input type="text" name="name" placeholder="Your name (optional)">
@@ -770,15 +786,10 @@ def login_page(roster: dict, error: str = "") -> str:
     </form>
   </div>
   <div class="card login-card worker">
-    <h3>🧑‍🔧 I'm a team member</h3>
-    <div class="desc">File your daily report, tick off your tasks,
-      and see how your team is doing today.</div>
-    <form method="post" action="/login">
-      <input type="hidden" name="role" value="worker">
-      <select name="team" required>{''.join(team_opts)}</select>
-      <input type="text" name="name" placeholder="Your name (optional)">
-      <button type="submit">Enter my workspace →</button>
-    </form>
+    <h3>🧑‍🔧 I lead a group</h3>
+    <div class="desc">File your group's daily report, tick off your tasks,
+      and see how your group is doing today.</div>
+    {worker_form}
   </div>
 </div>
 <p class="muted" style="text-align:center;font-size:12px;margin-top:26px">
@@ -918,3 +929,218 @@ performance dashboard appears here.</div>
 </table></div>
 {done_note}"""
     return shell("My day", "me", today, body, user=user)
+
+
+# ---------------------------------------------------------------------------
+# / — the manager's dashboard: daily work completion, clustered by group
+# ---------------------------------------------------------------------------
+
+_DASH_CSS = """
+.pill { margin-left: auto; background: rgba(217,149,19,.15); border: 1px solid #d99513;
+  color: #d99513; border-radius: 20px; padding: 5px 14px; font-size: 13px; font-weight: 700; }
+.pill.good { background: rgba(30,158,90,.15); border-color: #1e9e5a; color: #1e9e5a; }
+.tiles4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.stat { background: #171a21; border: 1px solid #262a31; border-radius: 12px; padding: 14px 16px; }
+.stat .k { font-size: 12px; color: #8a8f98; }
+.stat .v { font-size: 30px; font-weight: 800; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.stat .s { font-size: 12px; color: #8a8f98; }
+.roster-row { display: grid; grid-template-columns: 44px minmax(140px, 1.2fr) 2fr auto;
+  gap: 14px; align-items: center; padding: 12px 6px; border-bottom: 1px solid #20242b; }
+.roster-row:last-child { border-bottom: 0; }
+.avatar { width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center;
+  justify-content: center; font-weight: 800; font-size: 13px; color: #fff; }
+.roster-name { font-weight: 700; }
+.roster-sub { font-size: 12px; color: #8a8f98; }
+.roster-sub .bad { color: #d64545; font-weight: 600; }
+.roster-sub .warn { color: #d99513; font-weight: 600; }
+.ptrack { background: #20242b; border-radius: 6px; height: 10px; overflow: hidden; }
+.pfill { height: 100%; border-radius: 6px; }
+.roster-count { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.worklist { list-style: none; margin: 0; padding: 0; }
+.worklist li { display: flex; gap: 10px; align-items: baseline; padding: 8px 2px;
+  border-bottom: 1px solid #20242b; font-size: 14px; }
+.worklist li:last-child { border-bottom: 0; }
+.wdot { width: 9px; height: 9px; border-radius: 50%; flex: none; position: relative; top: -1px; }
+.wmeta { color: #8a8f98; font-size: 12px; margin-left: auto; white-space: nowrap; }
+.checklist { list-style: none; margin: 0; padding: 0; }
+.checklist li { display: flex; gap: 10px; align-items: center; padding: 9px 2px;
+  border-bottom: 1px solid #20242b; font-size: 14px; }
+.checklist li:last-child { border-bottom: 0; }
+.checklist .pct { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
+@media (prefers-color-scheme: light) {
+  .stat { background: #fff; border-color: #e3e6ea; }
+  .roster-row, .worklist li, .checklist li { border-color: #eceef1; }
+  .ptrack { background: #e7eaee; }
+}
+@media (max-width: 640px) { .roster-row { grid-template-columns: 44px 1fr auto; }
+  .roster-row .ptrack { display: none; } }
+"""
+
+_LEVEL_COLOR = {0: "#1e9e5a", 1: "#d99513", 2: "#d64545"}
+
+
+def _initials(name: str) -> str:
+    words = [w for w in re.split(r"[^A-Za-z0-9]+", name) if w]
+    if not words:
+        return "?"
+    if len(words) == 1:
+        return words[0][:2].upper()
+    return (words[0][0] + words[1][0]).upper()
+
+
+def completion_dashboard(stats: dict, day: str, user: dict | None = None,
+                         submitted: str = "") -> str:
+    tiles = stats["tiles"]
+    g_total = stats["groups_total"]
+
+    if not g_total:
+        body = f"""<h1>Daily work completion</h1>
+<div class="sub">{esc(stats['day_label'])} · generated {esc(stats['generated_at'])}</div>
+<div class="card" style="text-align:center;padding:48px 24px">
+  <h3 style="font-size:18px">Set up your desk</h3>
+  <div class="sub">No groups yet. Add the groups that report to you —
+  Operations, Documentation, IT, … — and their leads can sign in and start reporting.</div>
+  <a class="cta" href="/groups">➕ Add your first group</a>
+</div>"""
+        return shell("Dashboard", "dashboard", day, body, extra_css=_DASH_CSS, user=user)
+
+    pct = stats["pct"]
+    pill_cls = "pill good" if (pct >= 80 and stats["on_track"] == g_total) else "pill"
+    pill = (f'<span class="{pill_cls}">{pct}% complete · '
+            f'{stats["on_track"]} of {g_total} on track</span>')
+
+    toast = ""
+    if submitted:
+        toast = f'<div class="toast">✓ Report received from <b>{esc(submitted)}</b></div>'
+
+    tiles_html = f"""<div class="tiles4">
+<div class="stat"><div class="k">Tasks completed</div>
+  <div class="v" style="color:#1e9e5a">{tiles['done']}</div>
+  <div class="s">of {tiles['total']} on the board</div></div>
+<div class="stat"><div class="k">Still pending</div>
+  <div class="v" style="color:#d99513">{tiles['pending']}</div>
+  <div class="s">within deadline</div></div>
+<div class="stat"><div class="k">Overdue</div>
+  <div class="v" style="color:#d64545">{tiles['overdue']}</div>
+  <div class="s">past deadline</div></div>
+<div class="stat"><div class="k">Blocked</div>
+  <div class="v">{tiles['blocked']}</div>
+  <div class="s">waiting on someone</div></div>
+</div>"""
+
+    rows = []
+    for r in stats["rows"]:
+        color = _LEVEL_COLOR[r["level"]]
+        frac = round(100 * r["done"] / r["total"]) if r["total"] else 0
+        sub_bits = []
+        if r["overdue"]:
+            cls = "bad" if r["level"] == 2 else "warn"
+            sub_bits.append(f'<span class="{cls}">{r["overdue"]} overdue</span>')
+        if not r["filed"]:
+            sub_bits.append('<span class="warn">no report yet</span>')
+        if r["last"]:
+            sub_bits.append(f'last activity {esc(r["last"])}')
+        elif not r["filed"]:
+            sub_bits.append('<span class="bad">no activity today</span>')
+        lead = f' · {esc(r["lead"])}' if r["lead"] else ""
+        rows.append(f"""<div class="roster-row">
+<span class="avatar" style="background:{color}">{esc(_initials(r['name']))}</span>
+<div><div class="roster-name">{esc(r['name'])}<span class="muted" style="font-weight:400">{lead}</span></div>
+  <div class="roster-sub">{' · '.join(sub_bits) or 'all clear'}</div></div>
+<div class="ptrack"><div class="pfill" style="width:{frac}%;background:{color}"></div></div>
+<span class="roster-count" style="color:{color}">{r['done']}/{r['total']} done</span>
+</div>""")
+
+    outstanding = []
+    for o in stats["outstanding"]:
+        color = _LEVEL_COLOR[o["level"]]
+        outstanding.append(
+            f'<li><span class="wdot" style="background:{color}"></span>'
+            f'<span><b>{esc(o["title"])}</b> <span class="muted">· {esc(o["group"])}</span></span>'
+            f'<span class="wmeta" style="color:{color}">{esc(o["note"])}</span></li>'
+        )
+    outstanding_html = "".join(outstanding) or '<li class="muted">Nothing outstanding. 🎉</li>'
+
+    checklist = []
+    for label, pct_v in stats["checklist"]:
+        if pct_v >= 90:
+            icon, color = "✓", "#1e9e5a"
+        elif pct_v >= 50:
+            icon, color = "🕓", "#d99513"
+        else:
+            icon, color = "●", "#d64545"
+        checklist.append(
+            f'<li><span style="color:{color}">{icon}</span> {esc(label)}'
+            f'<span class="pct" style="color:{color}">{pct_v}%</span></li>'
+        )
+
+    body = f"""<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+<div><h1>Daily work completion</h1>
+<div class="sub" style="margin-bottom:0">{esc(stats['day_label'])} · generated {esc(stats['generated_at'])}</div></div>
+{pill}
+</div>
+<div style="height:16px"></div>
+{toast}
+{tiles_html}
+<div class="card"><h3>Team roster</h3>
+{''.join(rows)}
+</div>
+<div class="grid2">
+<div class="card"><h3>Outstanding work</h3><ul class="worklist">{outstanding_html}</ul></div>
+<div class="card"><h3>Daily checklist · groups</h3><ul class="checklist">{''.join(checklist)}</ul></div>
+</div>
+<div class="sub">Full written reports &amp; KPI health: <a href="/sheet?date={esc(day)}">open the daily sheet →</a>
+&nbsp;·&nbsp; <a href="/?date={esc(stats['prev_day'])}">← {esc(stats['prev_day'])}</a>
+&nbsp; <a href="/?date={esc(stats['next_day'])}">{esc(stats['next_day'])} →</a></div>"""
+    return shell("Daily work completion", "dashboard", day, body,
+                 extra_css=_DASH_CSS, user=user)
+
+
+# ---------------------------------------------------------------------------
+# /groups — the manager sets up who reports to him
+# ---------------------------------------------------------------------------
+
+def groups_page(roster: dict, today: str, user: dict | None = None,
+                toast: str = "", error: str = "") -> str:
+    rows = []
+    for tid, info in roster.items():
+        lead = esc(info.get("manager", "")) or '<span class="muted">—</span>'
+        region = esc(info.get("region", "")) or '<span class="muted">—</span>'
+        rows.append(f"""<tr>
+<td><b>{esc(info.get('team_name', tid))}</b> <span class="muted" style="font-size:12px">({esc(tid)})</span></td>
+<td>{lead}</td>
+<td>{region}</td>
+<td><form method="post" action="/groups" class="rowform"
+     onsubmit="return confirm('Remove this group? Its past reports stay on disk.')">
+  <input type="hidden" name="action" value="delete">
+  <input type="hidden" name="id" value="{esc(tid)}">
+  <button type="submit" class="danger">✕ Remove</button></form></td></tr>""")
+    if not rows:
+        rows.append('<tr><td colspan="4" class="muted">No groups yet — add the first one below.</td></tr>')
+
+    toast_html = ""
+    if toast:
+        toast_html = f'<div class="toast">✓ {esc(toast)}</div>'
+    if error:
+        toast_html = f'<div class="toast error">⚠ {esc(error)}</div>'
+
+    body = f"""<h1>👥 Groups</h1>
+<div class="sub">The groups that report to you every day — their leads pick their group when they sign in.
+Add a region only if your desk actually spans more than one.</div>
+{toast_html}
+<div class="card" style="padding:0 8px">
+<table>
+<thead><tr><th>Group</th><th>Lead</th><th>Region</th><th></th></tr></thead>
+<tbody>{''.join(rows)}</tbody></table></div>
+<div class="card"><h3>➕ Add a group</h3>
+<form method="post" action="/groups" class="addform">
+  <input type="hidden" name="action" value="add">
+  <div class="fld" style="flex:1;min-width:180px"><label>Group name</label>
+    <input type="text" name="name" required placeholder="e.g. Operations, Documentation, IT" style="width:100%"></div>
+  <div class="fld"><label>Lead (optional)</label>
+    <input type="text" name="lead" placeholder="who reports"></div>
+  <div class="fld"><label>Region (optional)</label>
+    <input type="text" name="region" placeholder="e.g. East China"></div>
+  <button type="submit">Add group</button>
+</form></div>"""
+    return shell("Groups", "groups", today, body, user=user)

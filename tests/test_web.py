@@ -92,17 +92,17 @@ def test_anonymous_is_sent_to_login(server):
 def test_login_pages_and_roles(server):
     c = Client(server)
     _, body = c.get("/login")
-    assert "operations manager" in body and "team member" in body
+    assert "I'm the manager" in body and "I lead a group" in body
     assert "Team One" in body  # the worker door lists the roster
 
     # Worker must pick a real team.
     _, body = c.post("/login", {"role": "worker", "team": "nope"})
     assert "choose your team" in body
 
-    # Manager lands on the dashboard.
+    # Manager lands on the completion dashboard.
     m = manager(server)
     _, body = m.get("/")
-    assert "MOOV Operations" in body and "Manager" in body
+    assert "Daily work completion" in body and "Manager" in body
 
     # Worker lands on My day; the dashboard bounces them back there.
     w = worker(server)
@@ -127,12 +127,26 @@ def test_worker_cannot_open_manager_pages(server):
 def test_interfaces_look_different(server):
     _, mbody = manager(server).get("/tasks")
     _, wbody = worker(server).get("/tasks")
-    assert "role-manager" in mbody and "Manager ·" in mbody
+    assert "role-manager" in mbody and "Manager" in mbody
     assert "role-worker" in wbody and "Team ·" in wbody
-    assert "Add a task" in mbody
-    assert "Add a task" not in wbody
-    assert "Employee task list" in mbody
+    assert "Assign a task" in mbody
+    assert "Assign a task" not in wbody
+    assert "Task board" in mbody
     assert "Team One tasks" in wbody
+
+
+def test_manager_cannot_tick_tasks_only_groups_can(server):
+    m = manager(server)
+    m.post("/tasks", {"action": "add", "title": "Group job", "team_id": "t1"})
+    _, mbody = m.get("/tasks")
+    # The manager assigns and removes — no status controls on his board.
+    assert "✓ Done" not in mbody
+    assert 'name="status"' not in mbody
+    assert "✕ Remove" in mbody
+    # The group lead has the controls.
+    _, wbody = worker(server).get("/tasks")
+    assert "✓ Done" in wbody
+    assert 'name="status"' in wbody
 
 
 # ---------------------------------------------------------------------------
@@ -141,9 +155,28 @@ def test_interfaces_look_different(server):
 
 def test_dashboard_empty_day(server):
     _, body = manager(server).get(f"/?date={DAY}")
-    assert "MOOV Operations" in body
-    assert "No team reports filed yet today." in body
-    assert "Awaiting reports" in body and "Team One" in body and "Team Two" in body
+    assert "Daily work completion" in body
+    assert "Team One" in body and "Team Two" in body
+    assert "no report yet" in body            # both groups still silent
+    assert "0 of 2 on track" in body
+    assert "Daily reports filed" in body      # the checklist card
+
+
+def test_dashboard_reflects_reports_and_tasks(server):
+    m = manager(server)
+    m.post("/tasks", {"action": "add", "title": "Late job", "team_id": "t1",
+                      "due_date": "2020-01-01"})   # overdue
+    m.post("/tasks", {"action": "add", "title": "Fine job", "team_id": "t2",
+                      "due_date": "2999-01-01"})
+    worker(server, team="t2", name="Bea").post("/submit", {
+        "date": DAY, "accomplished": "did it"})
+
+    _, body = m.get(f"/?date={DAY}")
+    assert "1 of 2 on track" in body           # t2 filed & clean, t1 overdue+silent
+    assert "1 overdue" in body                 # t1's roster row flag
+    assert "Late job" in body                  # outstanding work list
+    assert "overdue" in body and "Outstanding work" in body
+    assert "Daily reports filed" in body and "50%" in body
 
 
 def test_worker_submit_form_is_locked_to_their_team(server):
@@ -170,11 +203,17 @@ def test_full_submission_flow(server):
     assert "today's performance" in body    # the after-report dashboard
     assert "SLA Attainment" in body
 
-    # ...and the manager sees it on the dashboard.
-    _, dash = manager(server).get(f"/?date={DAY}")
-    assert "Held the line" in dash
-    assert "Need two more drivers" in dash
-    assert "Team Two" in dash and "Awaiting reports" in dash  # t2 still missing
+    # ...the manager's dashboard shows Team One reported, Team Two silent...
+    m = manager(server)
+    _, dash = m.get(f"/?date={DAY}")
+    assert "Daily work completion" in dash
+    assert "1 of 2 on track" in dash
+    assert "no report yet" in dash              # Team Two
+
+    # ...and the full words are on the daily sheet.
+    _, sheet = m.get(f"/sheet?date={DAY}")
+    assert "Held the line" in sheet
+    assert "Need two more drivers" in sheet
 
     # JSON endpoint stays open for other systems.
     with urllib.request.urlopen(f"{server}/report.json?date={DAY}") as resp:
@@ -186,9 +225,10 @@ def test_full_submission_flow(server):
 def test_worker_cannot_file_for_another_team(server):
     w = worker(server, team="t1")
     w.post("/submit", {"date": DAY, "team": "t2", "accomplished": "Sneaky"})
-    _, dash = manager(server).get(f"/?date={DAY}")
-    assert "Team One" in dash.split("Awaiting reports")[0]  # filed as t1
-    assert "Team Two" in dash.split("Awaiting reports")[1]  # t2 still awaited
+    with urllib.request.urlopen(f"{server}/report.json?date={DAY}") as resp:
+        data = json.loads(resp.read().decode())
+    # Filed under t1 despite the forged form field; t2 still awaited.
+    assert [t["team_id"] for t in data["awaiting_reports"]] == ["t2"]
 
 
 def test_form_prefills_existing_submission(server):
@@ -226,10 +266,37 @@ def test_bad_date_and_unknown_path(server):
 # Tasks
 # ---------------------------------------------------------------------------
 
+def test_groups_management(server):
+    m = manager(server)
+    _, body = m.get("/groups")
+    assert "Team One" in body and "Team Two" in body
+
+    # Add a group — it appears everywhere, including the sign-in door.
+    _, body = m.post("/groups", {"action": "add", "name": "IT", "lead": "Sofia K."})
+    assert "Group added: IT" in body and "Sofia K." in body
+    _, login = Client(server).get("/login")
+    assert "IT" in login
+
+    # Its lead can sign in and sees an empty board.
+    w = worker(server, team="it", name="Sofia K.")
+    _, body = w.get("/me")
+    assert "Hello Sofia K." in body
+
+    # A worker can't touch /groups at all.
+    _, body = w.post("/groups", {"action": "add", "name": "Rogue"})
+    assert "Hello" in body  # bounced to My day
+
+    # Removing the group also invalidates its lead's session.
+    _, body = m.post("/groups", {"action": "delete", "id": "it"})
+    assert "Group removed" in body
+    _, body = w.get("/me")
+    assert "Pick yours" in body  # signed out — their group is gone
+
+
 def test_task_lifecycle_over_http(server):
     m = manager(server)
     _, body = m.get("/tasks")
-    assert "Employee task list" in body
+    assert "Task board" in body
     assert "No tasks here yet" in body
 
     # Manager assigns a task with a team and a due date...

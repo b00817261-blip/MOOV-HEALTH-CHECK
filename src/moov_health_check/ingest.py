@@ -61,6 +61,15 @@ def _load_json(path: Path) -> tuple[list, str | None]:
     return snapshots, report_date
 
 
+def save_roster(roster_path: str, roster: dict) -> None:
+    """Write the roster back to disk (``{team_id: info}`` -> teams.json shape)."""
+    path = Path(roster_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"teams": list(roster.values())}
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+                    encoding="utf-8")
+
+
 def load_roster(roster_path: str) -> dict:
     """Load the team roster: ``{team_id: {team_id, team_name, region, ...}}``.
 
