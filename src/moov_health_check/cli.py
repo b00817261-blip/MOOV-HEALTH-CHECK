@@ -111,11 +111,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     # On hosts like Render/Railway/Fly the platform picks the port and data
     # location via environment variables, so honour those as the defaults.
+    # When a data dir is set, the groups file lives INSIDE it — never in the
+    # repo — so a redeploy can't reset the desk to the committed demo file.
+    data_dir = os.environ.get("MOOV_DATA_DIR")
+    default_roster = os.environ.get("MOOV_ROSTER") or (
+        os.path.join(data_dir, "groups.json") if data_dir else "config/teams.json")
     sv.add_argument("--reports-dir", "-R",
-                    default=os.environ.get("MOOV_DATA_DIR", "reports"),
+                    default=data_dir or "reports",
                     help="Shared reports directory (default: ./reports or $MOOV_DATA_DIR).")
-    sv.add_argument("--roster", default=os.environ.get("MOOV_ROSTER", "config/teams.json"),
-                    help="Roster JSON (default: config/teams.json or $MOOV_ROSTER).")
+    sv.add_argument("--roster", default=default_roster,
+                    help="Roster JSON (default: <data dir>/groups.json when "
+                         "$MOOV_DATA_DIR is set, else config/teams.json; "
+                         "override with $MOOV_ROSTER).")
     sv.add_argument("--config", "-c", help="Path to a custom thresholds JSON file.")
     sv.add_argument("--host", default=os.environ.get("HOST", "0.0.0.0"),
                     help="Bind address (default: 0.0.0.0 — reachable on your network).")

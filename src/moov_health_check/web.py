@@ -22,6 +22,7 @@ status, a note, any friction — and the manager's report assembles itself.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import smtplib
@@ -612,6 +613,61 @@ def report_json(state: AppState, day: str) -> str:
     return render(_full_report(state, day), "json")
 
 
+# ---------------------------------------------------------------------------
+# Backup & restore — the whole desk in one portable JSON.
+#
+# On free hosts the disk is ephemeral: a restart wipes groups, tasks and
+# accounts. Every page the head views quietly saves a full snapshot into
+# their browser (localStorage); if the server comes back empty, the sign-in
+# page offers a one-click restore from that snapshot.
+# ---------------------------------------------------------------------------
+
+def backup_payload(state: AppState) -> dict:
+    """A portable snapshot of everything: groups, settings, tasks, accounts."""
+    def read(path):
+        try:
+            return json.loads(Path(path).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+    return {
+        "moov_backup": 1,
+        "saved_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+        "files": {
+            "groups": read(state.org.groups_path),
+            "settings": read(state.org.settings_path),
+            "tasks": read(state.tasks.path),
+            "accounts": read(state.accounts.path),
+        },
+    }
+
+
+def restore_payload(state: AppState, payload) -> tuple[bool, str]:
+    """Write a backup snapshot back into the data dir. Returns (ok, message)."""
+    if not isinstance(payload, dict) or payload.get("moov_backup") != 1:
+        return False, "That doesn't look like a MOOV backup."
+    files = payload.get("files")
+    if not isinstance(files, dict):
+        return False, "That doesn't look like a MOOV backup."
+    groups = files.get("groups")
+    if not (isinstance(groups, dict) and isinstance(groups.get("groups"), list)):
+        return False, "The backup has no groups to restore."
+    targets = {
+        "groups": state.org.groups_path,
+        "settings": state.org.settings_path,
+        "tasks": state.tasks.path,
+        "accounts": state.accounts.path,
+    }
+    for key, path in targets.items():
+        data = files.get(key)
+        if data is None:
+            continue
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+                     encoding="utf-8")
+    return True, "Desk restored."
+
+
 def tasks_page(state: AppState, user: dict, team: str = "", status: str = "",
                toast: str = "", error: str = "") -> str:
     roster = _scoped_roster(state, user)
@@ -978,6 +1034,14 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         if path == "/report.json":
             self._send(report_json(self.state, day), "application/json; charset=utf-8")
             return
+        if path == "/backup.json":
+            if user is None or not user.get("is_root"):
+                self._send('{"error":"Only the head of the desk can download the backup."}',
+                           "application/json; charset=utf-8", 403)
+                return
+            self._send(json.dumps(backup_payload(self.state)),
+                       "application/json; charset=utf-8")
+            return
         if path == "/login":
             if user:
                 self._redirect("/" if user["is_leader"] else "/me")
@@ -1065,11 +1129,30 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_POST(self):  # noqa: N802
         path = urlparse(self.path).path
         if path not in ("/updates", "/tasks", "/login", "/join",
-                        "/groups", "/settings"):
+                        "/groups", "/settings", "/restore"):
             self._send("Not found.", "text/plain; charset=utf-8", 404)
             return
         length = min(int(self.headers.get("Content-Length", 0) or 0), 1_000_000)
         body = self.rfile.read(length).decode("utf-8", errors="replace")
+
+        if path == "/restore":
+            # Allowed for the signed-in head — or for anyone while the desk
+            # is empty (a freshly reset server), the same trust level as
+            # "the first person to register becomes the head".
+            user = self._user()
+            if self._head_exists() and not (user and user.get("is_root")):
+                self._send('{"ok":false,"error":"Only the head can restore the desk."}',
+                           "application/json; charset=utf-8", 403)
+                return
+            try:
+                payload = json.loads(body)
+            except ValueError:
+                payload = None
+            ok, msg = restore_payload(self.state, payload)
+            self._send(json.dumps({"ok": ok, "error": None if ok else msg}),
+                       "application/json; charset=utf-8", 200 if ok else 400)
+            return
+
         form = parse_qs(body, keep_blank_values=True)
 
         def field(name: str) -> str:

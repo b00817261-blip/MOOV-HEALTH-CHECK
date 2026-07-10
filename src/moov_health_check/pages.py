@@ -231,12 +231,25 @@ def sidebar(active: str, day: str, user: dict) -> str:
 
 def shell(title: str, active: str, day: str, body: str, extra_css: str = "",
           user: dict | None = None) -> str:
+    scripts = ""
     if user:
         body_cls = ' class="role-manager"' if user.get("is_leader") else ' class="role-worker"'
         layout = (f'<div class="app"><aside class="sidebar">{sidebar(active, day, user)}'
                   f'</aside><main class="main"><div class="mainwrap">{body}'
                   f'<footer>MOOV Health Check · zero-dependency daily operations website</footer>'
                   f'</div></main></div>')
+        if user.get("is_root"):
+            # Every page the head views quietly snapshots the whole desk into
+            # this browser; the sign-in page and the empty dashboard offer a
+            # one-click restore when the server comes back wiped (ephemeral
+            # free-tier disks). Empty snapshots never overwrite a good backup.
+            scripts = ("<script>fetch('/backup.json')"
+                       ".then(function(r){return r.ok?r.json():null})"
+                       ".then(function(b){if(b&&b.files&&b.files.groups"
+                       "&&b.files.groups.groups&&b.files.groups.groups.length>1)"
+                       "{try{localStorage.setItem("
+                       "'moov_backup',JSON.stringify(b))}catch(e){}}})"
+                       ".catch(function(){});</script>")
     else:
         body_cls = ""
         layout = (f'<div class="wrap">{body}'
@@ -248,7 +261,7 @@ def shell(title: str, active: str, day: str, body: str, extra_css: str = "",
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{esc(title)} — MOOV</title>
 <style>{BASE_CSS}{extra_css}</style></head>
-<body{body_cls}>{layout}</body></html>"""
+<body{body_cls}>{layout}{scripts}</body></html>"""
 
 
 def status_chip(status: str) -> str:
@@ -749,9 +762,51 @@ def login_page(head_exists: bool, error: str = "") -> str:
     <button type="submit" class="ghost">Sign in →</button>
   </form>
 </div>
+{'' if head_exists else restore_widget('/login', center=True)}
 <p class="muted" style="text-align:center;font-size:12px;margin-top:26px">
 Your email + code keep your account — sign in from any device and pick up where you left off.</p>"""
     return shell("Sign in", "", "", body)
+
+
+def restore_widget(goto: str, center: bool = False) -> str:
+    """Offer to put the desk back from this browser's automatic backup.
+
+    Rendered only when the server-side desk is empty (no head / no groups);
+    the script shows the card only if this browser actually holds a backup."""
+    style = ("display:none;border-left:4px solid var(--green)"
+             + (";max-width:860px;margin:16px auto 0" if center else ";margin-top:16px"))
+    return f"""<div class="card" id="restorecard" style="{style}">
+  <h3>💾 Restore your desk</h3>
+  <div class="desc" style="color:var(--muted);font-size:13px" id="restoretext">
+    This browser holds an automatic backup of your desk.</div>
+  <button type="button" id="restorebtn" style="margin-top:10px">Restore my desk →</button>
+</div>
+<script>
+(function() {{
+  var raw = null; try {{ raw = localStorage.getItem('moov_backup') }} catch (e) {{}}
+  if (!raw) return;
+  var b; try {{ b = JSON.parse(raw) }} catch (e) {{ return }}
+  if (!b || b.moov_backup !== 1) return;
+  document.getElementById('restorecard').style.display = 'block';
+  if (b.saved_at) document.getElementById('restoretext').textContent =
+    'This browser holds an automatic backup of your desk (saved ' + b.saved_at +
+    '), but the server looks freshly reset. One click puts everything back — ' +
+    'groups, tasks, updates and accounts.';
+  document.getElementById('restorebtn').onclick = function() {{
+    var btn = this; btn.disabled = true; btn.textContent = 'Restoring…';
+    fetch('/restore', {{method: 'POST',
+        headers: {{'Content-Type': 'application/json'}}, body: raw}})
+      .then(function(r) {{ return r.json() }})
+      .then(function(j) {{
+        if (j.ok) {{ location.href = '{goto}'; }}
+        else {{ alert(j.error || 'Restore failed.');
+               btn.disabled = false; btn.textContent = 'Restore my desk →'; }}
+      }})
+      .catch(function() {{ alert('Restore failed.');
+        btn.disabled = false; btn.textContent = 'Restore my desk →'; }});
+  }};
+}})();
+</script>"""
 
 
 def join_page(group_name: str, role: str, token: str, error: str = "") -> str:
@@ -1296,7 +1351,8 @@ def completion_dashboard(stats: dict, day: str, user: dict | None = None,
   <div class="sub">No groups yet. Add the groups that report to you —
   Operations, Documentation, IT, … — and their leads can sign in and start reporting.</div>
   <a class="cta" href="/groups">➕ Add your first group</a>
-</div>"""
+</div>
+{restore_widget('/') if (user or {}).get('is_root') else ''}"""
         return shell("Dashboard", "dashboard", day, body, extra_css=_DASH_CSS, user=user)
 
     pct = stats["pct"]

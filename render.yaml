@@ -6,9 +6,14 @@
 #
 # ⚠️ Free plan note: the free web service has an *ephemeral* disk and sleeps
 # after ~15 min idle, so the JSON data (groups, tasks, updates) resets on
-# redeploy/restart — perfect for a prototype/demo. To keep data permanently,
-# uncomment the `disk:` block below (Render disks are a paid add-on) and the app
-# will store everything on the mounted volume instead.
+# redeploy/restart. Two safety nets are built in:
+#   • every page the head views auto-saves a full desk backup into their
+#     browser, and the sign-in page offers one-click "Restore my desk"
+#     whenever the server comes back empty;
+#   • all state (including the groups file) lives in $MOOV_DATA_DIR, never in
+#     the repo, so a redeploy can't silently reset it to demo content.
+# For guaranteed permanence, uncomment the `disk:` block below (Render disks
+# are a paid add-on) and point MOOV_DATA_DIR at the mounted volume.
 services:
   - type: web
     name: moov-health-check

@@ -57,6 +57,13 @@ class Client:
         with self.opener.open(req) as resp:  # follows the 303 redirect
             return resp.status, resp.read().decode("utf-8")
 
+    def post_json(self, path: str, obj) -> tuple[int, str]:
+        req = urllib.request.Request(
+            self.base + path, data=json.dumps(obj).encode(), method="POST",
+            headers={"Content-Type": "application/json"})
+        with self.opener.open(req) as resp:
+            return resp.status, resp.read().decode("utf-8")
+
 
 @pytest.fixture
 def server(tmp_path):
@@ -243,6 +250,49 @@ def test_reinvite_rotates_the_link(server):
     # The old link no longer resolves.
     _, body = Client(server).get(f"/join?link={old}")
     assert "invalid" in body
+
+
+def test_backup_restores_the_whole_desk_after_a_wipe(server):
+    from pathlib import Path
+
+    m = head(server, "Derek", email="derek@moov.test")
+    m.post("/groups", {"action": "add", "name": "IT", "lead": "Sofia"})
+    w = member(server, "it", "Aki", email="aki@moov.test")
+    m.post("/tasks", {"action": "add", "title": "Restore me",
+                      "team_id": "it", "due_date": "2030-01-15"})
+    code_before = HealthCheckHandler.state.accounts.get("derek@moov.test")["code"]
+
+    # Only the head may download the desk backup.
+    with pytest.raises(urllib.error.HTTPError) as e:
+        w.get("/backup.json")
+    assert e.value.code == 403
+
+    _, raw = m.get("/backup.json")
+    backup = json.loads(raw)
+    assert backup["moov_backup"] == 1
+    assert backup["files"]["groups"] and backup["files"]["accounts"]
+
+    # The host wipes its ephemeral disk (a free-tier restart).
+    st = HealthCheckHandler.state
+    for p in (st.org.groups_path, st.org.settings_path,
+              st.tasks.path, st.accounts.path):
+        Path(p).unlink(missing_ok=True)
+    _, body = Client(server).get("/")          # nobody home — back to sign-in
+    assert "head of the desk" in body
+
+    # One click from the browser's backup puts everything back.
+    status, out = Client(server).post_json("/restore", backup)
+    assert status == 200 and json.loads(out)["ok"] is True
+    assert HealthCheckHandler.state.accounts.get("derek@moov.test")["code"] == code_before
+    _, dash = m.get("/")                        # the head's old cookie works again
+    assert "IT" in dash
+    _, me = w.get("/me")                        # ...and so does the member's task
+    assert "Restore me" in me
+
+    # While a head exists, a stranger can't overwrite the desk.
+    with pytest.raises(urllib.error.HTTPError) as e:
+        Client(server).post_json("/restore", backup)
+    assert e.value.code == 403
 
 
 def test_add_registered_person_to_group_by_email(server):
