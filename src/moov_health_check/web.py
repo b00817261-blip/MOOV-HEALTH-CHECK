@@ -23,13 +23,17 @@ status, a note, any friction — and the manager's report assembles itself.
 
 from __future__ import annotations
 
+import os
 import re
+import smtplib
 from datetime import date as date_cls, datetime, timedelta, timezone
+from email.message import EmailMessage
 from http import cookies as cookies_mod
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, quote_plus, unquote, urlparse
 
+from .accounts import AccountStore, normalize_email, valid_email
 from .config import load_metric_definitions
 from .focus import build_focus_items
 from .health import build_report
@@ -56,6 +60,8 @@ class AppState:
         self.tasks = TaskStore(str(Path(reports_dir) / "tasks.json"))
         # The org tree (groups.json == the roster file) + desk settings.
         self.org = Org(roster_path, str(Path(reports_dir) / "settings.json"))
+        # Email accounts, so people keep their identity across sessions.
+        self.accounts = AccountStore(str(Path(reports_dir) / "accounts.json"))
 
     def roster(self) -> dict:
         # The real groups (everything except the synthetic root), keyed by id.
@@ -89,6 +95,54 @@ def make_user_cookie(group_id: str, name: str, is_leader: bool) -> str:
 
 def clear_user_cookie() -> str:
     return f"{_COOKIE_NAME}=; Path=/; Max-Age=0; SameSite=Lax; HttpOnly"
+
+
+def smtp_configured() -> bool:
+    """Is an email provider wired up (so codes are sent, not shown on screen)?"""
+    return bool(os.environ.get("MOOV_SMTP_HOST"))
+
+
+def send_code_email(email: str, code: str) -> bool:
+    """Email a verification code via SMTP (stdlib only). Returns True if sent.
+
+    Configure with env vars: MOOV_SMTP_HOST (required), MOOV_SMTP_PORT (587),
+    MOOV_SMTP_USER, MOOV_SMTP_PASS, MOOV_SMTP_FROM. Works with Resend /
+    SendGrid / Gmail SMTP — any provider with a free tier.
+    """
+    host = os.environ.get("MOOV_SMTP_HOST")
+    if not host:
+        return False
+    user = os.environ.get("MOOV_SMTP_USER", "")
+    sender = os.environ.get("MOOV_SMTP_FROM", user or "no-reply@moov.local")
+    port = int(os.environ.get("MOOV_SMTP_PORT", "587") or "587")
+    msg = EmailMessage()
+    msg["Subject"] = "Your MOOV sign-in code"
+    msg["From"] = sender
+    msg["To"] = email
+    msg.set_content(
+        f"Your MOOV verification code is: {code}\n\n"
+        "It expires in 15 minutes. If you didn't request this, ignore this email."
+    )
+    try:
+        with smtplib.SMTP(host, port, timeout=15) as s:
+            s.starttls()
+            if user:
+                s.login(user, os.environ.get("MOOV_SMTP_PASS", ""))
+            s.send_message(msg)
+        return True
+    except Exception as exc:  # noqa: BLE001 — never break sign-in on mail errors
+        print(f"  [email] could not send code to {email}: {exc}")
+        return False
+
+
+def issue_code(state: AppState, email: str, pending: dict | None = None) -> bool:
+    """Generate a code for ``email`` and deliver it. Returns True if emailed
+    (False means the caller should show it on screen — the dev fallback)."""
+    code = state.accounts.start_verification(email, pending)
+    if send_code_email(email, code):
+        return True
+    print(f"  [verify] code for {email}: {code}  (set MOOV_SMTP_* to email it)")
+    return False
 
 
 def parse_user(state: AppState, cookie_header: str | None) -> dict | None:
@@ -744,8 +798,94 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         return f"http://{host}"
 
     def _head_exists(self) -> bool:
+        if self.state.accounts.head_email():
+            return True
         root = self.state.org.get(ROOT_ID)
         return bool(root and root.get("leader"))
+
+    # -- email sign-in: register / return, then confirm a code -------------
+    def _handle_login(self, field) -> None:
+        email = normalize_email(field("email"))[:120]
+        name = field("name")[:60]
+        if not valid_email(email):
+            self._send(pages.login_page(
+                self._head_exists(), error="Please enter a valid email address."))
+            return
+        if name:
+            # Registering (or re-confirming) as the head of the desk.
+            head = self.state.accounts.head_email()
+            if head and head != email:
+                self._send(pages.login_page(
+                    self._head_exists(),
+                    error="A head of the desk is already registered — "
+                          "sign in with that email instead."))
+                return
+            pending = {"name": name, "group_id": ROOT_ID,
+                       "is_leader": True, "is_root": True}
+        else:
+            # Returning sign-in — the account must already exist.
+            acct = self.state.accounts.get(email)
+            if not acct or not acct.get("verified"):
+                self._send(pages.login_page(
+                    self._head_exists(),
+                    error="No account for that email yet. Enter your name to "
+                          "register as head, or open an invite link."))
+                return
+            pending = None
+        issue_code(self.state, email, pending)
+        self._redirect(f"/verify?email={quote_plus(email)}")
+
+    def _handle_verify(self, field) -> None:
+        email = normalize_email(field("email"))[:120]
+        code = field("code")[:12]
+        acct = self.state.accounts.verify(email, code)
+        if acct is None:
+            dev_code = "" if smtp_configured() else \
+                (self.state.accounts.get(email) or {}).get("code", "")
+            self._send(pages.verify_page(
+                email, dev_code=dev_code,
+                error="That code is wrong or has expired. Try again."))
+            return
+        gid = acct.get("group_id") or ROOT_ID
+        name = acct.get("name", "")
+        is_leader = bool(acct.get("is_leader"))
+        g = self.state.org.get(gid)
+        if gid == ROOT_ID:
+            self.state.org.update_group(ROOT_ID, leader=name)
+        elif g is None:
+            self._send(pages.login_page(
+                self._head_exists(),
+                error="Your group no longer exists — ask for a fresh invite link."))
+            return
+        elif is_leader and not g.get("leader"):
+            self.state.org.update_group(gid, leader=name)
+        self._redirect("/" if is_leader else "/me",
+                       set_cookie=make_user_cookie(gid, name, is_leader))
+
+    def _handle_join(self, field) -> None:
+        token = field("token")[:80]
+        name = field("name")[:60]
+        email = normalize_email(field("email"))[:120]
+        resolved = self.state.org.resolve_token(token)
+        if resolved is None:
+            self._send(pages.login_page(
+                self._head_exists(),
+                error="That invite link is invalid or has been replaced."))
+            return
+        gid, role = resolved
+        g = self.state.org.get(gid)
+        err = ""
+        if not name:
+            err = "Please enter your name to join."
+        elif not valid_email(email):
+            err = "Please enter a valid email address."
+        if err:
+            self._send(pages.join_page(g.get("team_name", gid), role, token, error=err))
+            return
+        pending = {"name": name, "group_id": gid,
+                   "is_leader": role == "leader", "is_root": False}
+        issue_code(self.state, email, pending)
+        self._redirect(f"/verify?email={quote_plus(email)}")
 
     # -- routes -------------------------------------------------------------
     def do_GET(self):  # noqa: N802 (http.server API)
@@ -768,6 +908,16 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
                 self._redirect("/" if user["is_leader"] else "/me")
             else:
                 self._send(pages.login_page(self._head_exists()))
+            return
+        if path == "/verify":
+            email = normalize_email(qs.get("email", [""])[0])[:120]
+            acct = self.state.accounts.get(email)
+            if not acct or not acct.get("code"):
+                self._redirect("/login")
+                return
+            # In dev (no SMTP configured) show the code so sign-in works now.
+            dev_code = "" if smtp_configured() else acct.get("code", "")
+            self._send(pages.verify_page(email, dev_code=dev_code))
             return
         if path == "/logout":
             self._redirect("/login", set_cookie=clear_user_cookie())
@@ -852,8 +1002,8 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):  # noqa: N802
         path = urlparse(self.path).path
-        if path not in ("/updates", "/tasks", "/login", "/join", "/groups",
-                        "/settings"):
+        if path not in ("/updates", "/tasks", "/login", "/verify", "/join",
+                        "/groups", "/settings"):
             self._send("Not found.", "text/plain; charset=utf-8", 404)
             return
         length = min(int(self.headers.get("Content-Length", 0) or 0), 1_000_000)
@@ -864,37 +1014,13 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
             return (form.get(name, [""])[0] or "").strip()
 
         if path == "/login":
-            name = field("name")[:60]
-            if not name:
-                self._send(pages.login_page(
-                    self._head_exists(), error="Please enter your name."))
-                return
-            # The head is the leader of the root group.
-            self.state.org.update_group(ROOT_ID, leader=name)
-            self._redirect("/", set_cookie=make_user_cookie(ROOT_ID, name, True))
+            self._handle_login(field)
             return
-
+        if path == "/verify":
+            self._handle_verify(field)
+            return
         if path == "/join":
-            token = field("token")[:80]
-            name = field("name")[:60]
-            resolved = self.state.org.resolve_token(token)
-            if resolved is None:
-                self._send(pages.login_page(
-                    self._head_exists(),
-                    error="That invite link is invalid or has been replaced."))
-                return
-            gid, role = resolved
-            g = self.state.org.get(gid)
-            if not name:
-                self._send(pages.join_page(
-                    g.get("team_name", gid), role, token,
-                    error="Please enter your name to join."))
-                return
-            is_leader = role == "leader"
-            if is_leader and not g.get("leader"):
-                self.state.org.update_group(gid, leader=name)
-            self._redirect("/" if is_leader else "/me",
-                           set_cookie=make_user_cookie(gid, name, is_leader))
+            self._handle_join(field)
             return
 
         user = self._user()

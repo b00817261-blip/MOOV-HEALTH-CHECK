@@ -368,9 +368,13 @@ def tasks_page(roster: dict, tasks: list, today: str, user: dict | None = None,
         # landed, any difficulty) matching My day. On top of that, the person
         # who assigned the task can remove it; anyone else can instead flag
         # that they can't do it / need more time.
+        # "Done" is intentionally NOT a quick dropdown option — completing a
+        # task must go through the ✓ Done survey (where + any difficulty).
+        # It only appears when the task is already done, so it still displays.
         opts = "".join(
             f'<option value="{k}"{" selected" if t.get("status") == k else ""}>{v}</option>'
             for k, v in tasks_mod.STATUSES.items()
+            if k != "done" or t.get("status") == "done"
         )
         reason_opts = "".join(
             f'<label style="display:inline-block;margin:2px 8px 2px 0;font-size:13px">'
@@ -667,9 +671,9 @@ def history_page(tasks: list, roster: dict, today: str,
 
 def login_page(head_exists: bool, error: str = "") -> str:
     error_html = f'<div class="toast error">⚠ {esc(error)}</div>' if error else ""
-    head_line = ("Sign in to oversee the whole desk."
-                 if not head_exists else
-                 "You're already set up — sign in to pick up where you left off.")
+    head_line = ("Register to oversee the whole desk — we'll email you a code "
+                 "to confirm it's you." if not head_exists else
+                 "Enter your name and email to confirm you're the head.")
     body = f"""<div class="login-hero">
   <div class="brand">{_MOOV_MARK}</div>
   <div class="eyebrow" style="margin-top:18px">Daily reporting</div>
@@ -685,21 +689,31 @@ def login_page(head_exists: bool, error: str = "") -> str:
       and invite your group leaders with a link.</div>
     <form method="post" action="/login">
       <input type="text" name="name" placeholder="Your name" required>
-      <button type="submit">Enter as head →</button>
+      <input type="email" name="email" placeholder="you@company.com" required>
+      <button type="submit">Register as head →</button>
     </form>
   </div>
   <div class="card login-card worker">
     <h3>I have an invite link</h3>
     <div class="desc">Your boss shared a link to join their group. Open it, or
-      paste it here — you'll confirm your name and you're in.</div>
+      paste it here — you'll confirm your name and email, and you're in.</div>
     <form method="get" action="/join">
       <input type="text" name="link" placeholder="Paste your invite link" required>
       <button type="submit" class="orange">Continue →</button>
     </form>
   </div>
 </div>
+<div class="card" style="max-width:860px;margin:16px auto 0">
+  <h3>Already registered? Sign in with your email</h3>
+  <div class="desc" style="color:var(--muted);font-size:13px;margin-bottom:12px">
+    We'll email you a code — your name, group and role come right back.</div>
+  <form method="post" action="/login" style="display:flex;gap:10px;flex-wrap:wrap">
+    <input type="email" name="email" placeholder="you@company.com" required style="flex:1;min-width:220px">
+    <button type="submit" class="ghost">Email me a code →</button>
+  </form>
+</div>
 <p class="muted" style="text-align:center;font-size:12px;margin-top:26px">
-No passwords — you join through an invite link, on a trusted office network or VPN.</p>"""
+Your email keeps your account — sign in from any device and pick up where you left off.</p>"""
     return shell("Sign in", "", "", body)
 
 
@@ -710,22 +724,58 @@ def join_page(group_name: str, role: str, token: str, error: str = "") -> str:
              '<div class="desc">As the lead you can update your group\'s tasks, '
              "create sub-groups, and invite your own people.</div>")
     body = f"""<div class="login-hero">
-  <h1>🚦 Join {esc(group_name)}</h1>
+  <div class="brand">{_MOOV_MARK}</div>
+  <div class="eyebrow" style="margin-top:18px">Join {esc(group_name)}</div>
+  <h1 style="font-size:28px">Join {esc(group_name)}</h1>
   <div class="sub">You've been invited to be a <b>{role_line} {esc(group_name)}</b>.</div>
+  <div class="login-rule"></div>
 </div>
 {error_html}
 <div class="card login-card worker" style="max-width:460px;margin:0 auto">
-  <h3>Confirm your name to join</h3>
+  <h3>Confirm your details to join</h3>
   {extra}
   <form method="post" action="/join">
     <input type="hidden" name="token" value="{esc(token)}">
     <input type="text" name="name" placeholder="Your full name" required autofocus>
-    <button type="submit">Join {esc(group_name)} →</button>
+    <input type="email" name="email" placeholder="you@company.com" required>
+    <button type="submit" class="orange">Join {esc(group_name)} →</button>
   </form>
 </div>
 <p class="muted" style="text-align:center;font-size:12px;margin-top:20px">
-Not you? <a href="/login">Go back</a>.</p>"""
+We'll email you a code to confirm. Not you? <a href="/login">Go back</a>.</p>"""
     return shell(f"Join {group_name}", "", "", body)
+
+
+def verify_page(email: str, dev_code: str = "", error: str = "") -> str:
+    """Enter the six-digit code. In dev (no email provider) we show the code."""
+    error_html = f'<div class="toast error">⚠ {esc(error)}</div>' if error else ""
+    dev_html = ""
+    if dev_code:
+        dev_html = (
+            '<div class="toast" style="border-left-color:var(--navy);background:#eaf0f6">'
+            'Email isn\'t set up yet, so here\'s your code: '
+            f'<b style="font-size:18px;letter-spacing:2px">{esc(dev_code)}</b></div>')
+    body = f"""<div class="login-hero">
+  <div class="brand">{_MOOV_MARK}</div>
+  <div class="eyebrow" style="margin-top:18px">Verify your email</div>
+  <h1 style="font-size:28px">Enter your code</h1>
+  <div class="sub">We sent a 6-digit code to <b>{esc(email)}</b>.</div>
+  <div class="login-rule"></div>
+</div>
+{error_html}
+{dev_html}
+<div class="card login-card manager" style="max-width:420px;margin:0 auto">
+  <form method="post" action="/verify">
+    <input type="hidden" name="email" value="{esc(email)}">
+    <input type="text" name="code" inputmode="numeric" autocomplete="one-time-code"
+      pattern="[0-9]*" maxlength="6" placeholder="123456" required autofocus
+      style="text-align:center;font-size:22px;letter-spacing:6px">
+    <button type="submit">Verify &amp; sign in →</button>
+  </form>
+</div>
+<p class="muted" style="text-align:center;font-size:12px;margin-top:20px">
+The code expires in 15 minutes. <a href="/login">Start over</a>.</p>"""
+    return shell("Verify", "", "", body)
 
 
 def settings_page(channels: list, today: str, user: dict | None = None,

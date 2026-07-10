@@ -74,9 +74,21 @@ def server(tmp_path):
     httpd.server_close()
 
 
-def head(server, name="Boss") -> Client:
+def _slug(s: str) -> str:
+    return re.sub(r"[^a-z0-9]+", ".", s.lower()).strip(".") or "x"
+
+
+def _verify(c: Client, email: str) -> tuple[int, str]:
+    # No SMTP in tests, so the code lives on the account record — read it.
+    code = HealthCheckHandler.state.accounts.get(email)["code"]
+    return c.post("/verify", {"email": email, "code": code})
+
+
+def head(server, name="Boss", email=None) -> Client:
+    email = email or f"{_slug(name)}@head.test"
     c = Client(server)
-    c.post("/login", {"name": name})
+    c.post("/login", {"name": name, "email": email})
+    _verify(c, email)
     return c
 
 
@@ -84,15 +96,19 @@ def _token(gid: str, role: str) -> str:
     return HealthCheckHandler.state.org.get(gid)["tokens"][role]
 
 
-def member(server, gid="t1", name="Aki") -> Client:
+def member(server, gid="t1", name="Aki", email=None) -> Client:
+    email = email or f"{_slug(name)}.{gid}@member.test"
     c = Client(server)
-    c.post("/join", {"token": _token(gid, "member"), "name": name})
+    c.post("/join", {"token": _token(gid, "member"), "name": name, "email": email})
+    _verify(c, email)
     return c
 
 
-def lead(server, gid="t1", name="Lena") -> Client:
+def lead(server, gid="t1", name="Lena", email=None) -> Client:
+    email = email or f"{_slug(name)}.{gid}@lead.test"
     c = Client(server)
-    c.post("/join", {"token": _token(gid, "leader"), "name": name})
+    c.post("/join", {"token": _token(gid, "leader"), "name": name, "email": email})
+    _verify(c, email)
     return c
 
 
@@ -114,13 +130,17 @@ def test_login_and_join_flow(server):
     _, body = c.get("/login")
     assert "head of the desk" in body and "invite link" in body
 
-    # The head must give a name.
-    _, body = c.post("/login", {"name": ""})
-    assert "enter your name" in body.lower()
-
-    # Head lands on the completion dashboard.
-    m = head(server, "Derek")
-    _, body = m.get("/")
+    # Registering as head needs a valid email; then a code confirms it.
+    _, body = c.post("/login", {"name": "Derek", "email": "not-an-email"})
+    assert "valid email" in body.lower()
+    _, body = c.post("/login", {"name": "Derek", "email": "derek@moov.test"})
+    assert "Enter your code" in body and "derek@moov.test" in body
+    # A wrong code is rejected; the right one signs the head in.
+    _, body = c.post("/verify", {"email": "derek@moov.test", "code": "000000"})
+    assert "wrong or has expired" in body
+    code = HealthCheckHandler.state.accounts.get("derek@moov.test")["code"]
+    c.post("/verify", {"email": "derek@moov.test", "code": code})
+    _, body = c.get("/")
     assert "Daily work completion" in body and "Head" in body
 
     # A member joins Team One via its invite link and lands on Today's tasks.
@@ -131,12 +151,21 @@ def test_login_and_join_flow(server):
     assert "Aki" in body
 
     # A bad token is rejected.
-    _, body = c.post("/join", {"token": "nope", "name": "X"})
+    _, body = w.post("/join", {"token": "nope", "name": "X", "email": "x@y.test"})
     assert "invalid" in body
 
     # Sign out returns to the login screen.
-    _, body = m.get("/logout")
+    _, body = c.get("/logout")
     assert "head of the desk" in body
+
+    # ...and the account persists: signing back in by email alone restores it.
+    fresh = Client(server)
+    _, body = fresh.post("/login", {"email": "derek@moov.test"})
+    assert "Enter your code" in body
+    code = HealthCheckHandler.state.accounts.get("derek@moov.test")["code"]
+    fresh.post("/verify", {"email": "derek@moov.test", "code": code})
+    _, body = fresh.get("/")
+    assert "Daily work completion" in body and "Derek" in body
 
 
 def test_member_cannot_open_leader_pages(server):
@@ -189,9 +218,8 @@ def test_head_builds_groups_and_shares_invites(server):
     assert "Group added: IT" in body and "IT" in body
 
     # Its leader link lets someone join as leader and get the boss view.
-    leader_tok = _token("it", "leader")
-    boss = Client(server)
-    _, body = boss.post("/join", {"token": leader_tok, "name": "Sofia"})
+    boss = lead(server, "it", "Sofia")
+    _, body = boss.get("/")
     assert "Daily work completion" in body  # leaders land on the dashboard
     assert "Lead · IT" in body
 
@@ -354,6 +382,9 @@ def test_done_survey_from_the_board(server):
     _, body = w.get("/tasks")
     assert "✓ Done" in body and "Where's it at?" in body
     assert "Did you hit any difficulty?" in body and "Email" in body
+    # Done is NOT a quick dropdown option — you can't skip the survey.
+    assert ">Done</option>" not in body
+    assert ">In progress</option>" in body
 
     _, body = w.post("/tasks", {"action": "complete", "id": tid,
                                 "channel": "teams", "reason": "time",
