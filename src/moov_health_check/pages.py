@@ -704,16 +704,18 @@ def login_page(head_exists: bool, error: str = "") -> str:
   </div>
 </div>
 <div class="card" style="max-width:860px;margin:16px auto 0">
-  <h3>Already registered? Sign in with your email</h3>
+  <h3>Already registered? Sign in with your email + code</h3>
   <div class="desc" style="color:var(--muted);font-size:13px;margin-bottom:12px">
-    We'll email you a code — your name, group and role come right back.</div>
-  <form method="post" action="/login" style="display:flex;gap:10px;flex-wrap:wrap">
-    <input type="email" name="email" placeholder="you@company.com" required style="flex:1;min-width:220px">
-    <button type="submit" class="ghost">Email me a code →</button>
+    Use the code you were given when you signed up — your name, group and role come right back.</div>
+  <form method="post" action="/login" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+    <input type="email" name="email" placeholder="you@company.com" required style="flex:2;min-width:220px">
+    <input type="text" name="code" inputmode="numeric" pattern="[0-9]*" maxlength="6"
+      placeholder="Your code" required style="flex:1;min-width:130px;letter-spacing:3px">
+    <button type="submit" class="ghost">Sign in →</button>
   </form>
 </div>
 <p class="muted" style="text-align:center;font-size:12px;margin-top:26px">
-Your email keeps your account — sign in from any device and pick up where you left off.</p>"""
+Your email + code keep your account — sign in from any device and pick up where you left off.</p>"""
     return shell("Sign in", "", "", body)
 
 
@@ -746,36 +748,29 @@ We'll email you a code to confirm. Not you? <a href="/login">Go back</a>.</p>"""
     return shell(f"Join {group_name}", "", "", body)
 
 
-def verify_page(email: str, dev_code: str = "", error: str = "") -> str:
-    """Enter the six-digit code. In dev (no email provider) we show the code."""
-    error_html = f'<div class="toast error">⚠ {esc(error)}</div>' if error else ""
-    dev_html = ""
-    if dev_code:
-        dev_html = (
-            '<div class="toast" style="border-left-color:var(--navy);background:#eaf0f6">'
-            'Email isn\'t set up yet, so here\'s your code: '
-            f'<b style="font-size:18px;letter-spacing:2px">{esc(dev_code)}</b></div>')
+def code_page(name: str, email: str, code: str, is_leader: bool,
+              emailed: bool = False) -> str:
+    """Shown right after registering: you're signed in — keep this code."""
+    where = ("/", "Go to my dashboard →") if is_leader else ("/me", "Go to my tasks →")
+    sent_note = ("We've also emailed it to you. "
+                 if emailed else "Keep it somewhere safe. ")
     body = f"""<div class="login-hero">
   <div class="brand">{_MOOV_MARK}</div>
-  <div class="eyebrow" style="margin-top:18px">Verify your email</div>
-  <h1 style="font-size:28px">Enter your code</h1>
-  <div class="sub">We sent a 6-digit code to <b>{esc(email)}</b>.</div>
+  <div class="eyebrow" style="margin-top:18px">You're in{f", {esc(name)}" if name else ""}</div>
+  <h1 style="font-size:28px">Save your sign-in code</h1>
+  <div class="sub">Next time, sign in with <b>{esc(email)}</b> and this code —
+    it's the same code every time, on any device.</div>
   <div class="login-rule"></div>
 </div>
-{error_html}
-{dev_html}
-<div class="card login-card manager" style="max-width:420px;margin:0 auto">
-  <form method="post" action="/verify">
-    <input type="hidden" name="email" value="{esc(email)}">
-    <input type="text" name="code" inputmode="numeric" autocomplete="one-time-code"
-      pattern="[0-9]*" maxlength="6" placeholder="123456" required autofocus
-      style="text-align:center;font-size:22px;letter-spacing:6px">
-    <button type="submit">Verify &amp; sign in →</button>
-  </form>
+<div class="card login-card manager" style="max-width:420px;margin:0 auto;text-align:center">
+  <div class="desc" style="margin-bottom:6px">Your permanent sign-in code</div>
+  <div style="font-size:40px;font-weight:800;letter-spacing:10px;color:var(--navy);margin:6px 0 14px">{esc(code)}</div>
+  <div class="muted" style="font-size:13px;margin-bottom:16px">{sent_note}You won't be asked for it again on this device.</div>
+  <a class="cta" href="{where[0]}" style="display:block">{where[1]}</a>
 </div>
 <p class="muted" style="text-align:center;font-size:12px;margin-top:20px">
-The code expires in 15 minutes. <a href="/login">Start over</a>.</p>"""
-    return shell("Verify", "", "", body)
+Lost your code later? Ask the head of the desk, or re-open your invite link.</p>"""
+    return shell("Your code", "", "", body)
 
 
 def settings_page(channels: list, today: str, user: dict | None = None,

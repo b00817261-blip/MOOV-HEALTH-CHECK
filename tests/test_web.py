@@ -78,17 +78,16 @@ def _slug(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", ".", s.lower()).strip(".") or "x"
 
 
-def _verify(c: Client, email: str) -> tuple[int, str]:
-    # No SMTP in tests, so the code lives on the account record — read it.
-    code = HealthCheckHandler.state.accounts.get(email)["code"]
-    return c.post("/verify", {"email": email, "code": code})
+def _code(email: str) -> str:
+    """The permanent sign-in code stored for an account (no SMTP in tests)."""
+    return HealthCheckHandler.state.accounts.get(email)["code"]
 
 
 def head(server, name="Boss", email=None) -> Client:
+    # Registering signs you in immediately (and shows your code to keep).
     email = email or f"{_slug(name)}@head.test"
     c = Client(server)
     c.post("/login", {"name": name, "email": email})
-    _verify(c, email)
     return c
 
 
@@ -100,7 +99,6 @@ def member(server, gid="t1", name="Aki", email=None) -> Client:
     email = email or f"{_slug(name)}.{gid}@member.test"
     c = Client(server)
     c.post("/join", {"token": _token(gid, "member"), "name": name, "email": email})
-    _verify(c, email)
     return c
 
 
@@ -108,7 +106,6 @@ def lead(server, gid="t1", name="Lena", email=None) -> Client:
     email = email or f"{_slug(name)}.{gid}@lead.test"
     c = Client(server)
     c.post("/join", {"token": _token(gid, "leader"), "name": name, "email": email})
-    _verify(c, email)
     return c
 
 
@@ -130,16 +127,13 @@ def test_login_and_join_flow(server):
     _, body = c.get("/login")
     assert "head of the desk" in body and "invite link" in body
 
-    # Registering as head needs a valid email; then a code confirms it.
+    # Registering as head needs a valid email, then shows a permanent code.
     _, body = c.post("/login", {"name": "Derek", "email": "not-an-email"})
     assert "valid email" in body.lower()
     _, body = c.post("/login", {"name": "Derek", "email": "derek@moov.test"})
-    assert "Enter your code" in body and "derek@moov.test" in body
-    # A wrong code is rejected; the right one signs the head in.
-    _, body = c.post("/verify", {"email": "derek@moov.test", "code": "000000"})
-    assert "wrong or has expired" in body
+    assert "Save your sign-in code" in body      # registered + signed in
     code = HealthCheckHandler.state.accounts.get("derek@moov.test")["code"]
-    c.post("/verify", {"email": "derek@moov.test", "code": code})
+    assert code in body                          # the code is shown to keep
     _, body = c.get("/")
     assert "Daily work completion" in body and "Head" in body
 
@@ -154,16 +148,16 @@ def test_login_and_join_flow(server):
     _, body = w.post("/join", {"token": "nope", "name": "X", "email": "x@y.test"})
     assert "invalid" in body
 
-    # Sign out returns to the login screen.
+    # Sign out returns to the login screen; the code is unchanged.
     _, body = c.get("/logout")
     assert "head of the desk" in body
+    assert HealthCheckHandler.state.accounts.get("derek@moov.test")["code"] == code
 
-    # ...and the account persists: signing back in by email alone restores it.
+    # The SAME code signs the head back in on a fresh device — no new code.
     fresh = Client(server)
-    _, body = fresh.post("/login", {"email": "derek@moov.test"})
-    assert "Enter your code" in body
-    code = HealthCheckHandler.state.accounts.get("derek@moov.test")["code"]
-    fresh.post("/verify", {"email": "derek@moov.test", "code": code})
+    _, body = fresh.post("/login", {"email": "derek@moov.test", "code": "000000"})
+    assert "Check your code" in body             # wrong code rejected
+    fresh.post("/login", {"email": "derek@moov.test", "code": code})
     _, body = fresh.get("/")
     assert "Daily work completion" in body and "Derek" in body
 

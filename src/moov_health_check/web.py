@@ -135,16 +135,6 @@ def send_code_email(email: str, code: str) -> bool:
         return False
 
 
-def issue_code(state: AppState, email: str, pending: dict | None = None) -> bool:
-    """Generate a code for ``email`` and deliver it. Returns True if emailed
-    (False means the caller should show it on screen — the dev fallback)."""
-    code = state.accounts.start_verification(email, pending)
-    if send_code_email(email, code):
-        return True
-    print(f"  [verify] code for {email}: {code}  (set MOOV_SMTP_* to email it)")
-    return False
-
-
 def parse_user(state: AppState, cookie_header: str | None) -> dict | None:
     """Return the signed-in person, or None.
 
@@ -771,11 +761,13 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
 
     # -- helpers ------------------------------------------------------------
     def _send(self, body: str, content_type: str = "text/html; charset=utf-8",
-              status: int = 200) -> None:
+              status: int = 200, set_cookie: str | None = None) -> None:
         data = body.encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data)))
+        if set_cookie:
+            self.send_header("Set-Cookie", set_cookie)
         self.end_headers()
         self.wfile.write(data)
 
@@ -803,62 +795,69 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         root = self.state.org.get(ROOT_ID)
         return bool(root and root.get("leader"))
 
-    # -- email sign-in: register / return, then confirm a code -------------
+    # -- email sign-in: register (keep your code) or sign in with it -------
+    def _register(self, email: str, name: str, gid: str, is_leader: bool,
+                  is_root: bool) -> None:
+        """Create/refresh the account, sign the person in, and show them their
+        permanent code to keep."""
+        acct = self.state.accounts.register(email, {
+            "name": name, "group_id": gid,
+            "is_leader": is_leader, "is_root": is_root})
+        if gid == ROOT_ID:
+            self.state.org.update_group(ROOT_ID, leader=name)
+        elif is_leader:
+            g = self.state.org.get(gid)
+            if g is not None and not g.get("leader"):
+                self.state.org.update_group(gid, leader=name)
+        # If email is wired up, send the code as a keepsake too.
+        emailed = send_code_email(email, acct["code"])
+        self._send(
+            pages.code_page(name, email, acct["code"], is_leader, emailed=emailed),
+            set_cookie=make_user_cookie(gid, name, is_leader))
+
     def _handle_login(self, field) -> None:
         email = normalize_email(field("email"))[:120]
         name = field("name")[:60]
+        code = field("code")[:12]
         if not valid_email(email):
             self._send(pages.login_page(
                 self._head_exists(), error="Please enter a valid email address."))
             return
         if name:
-            # Registering (or re-confirming) as the head of the desk.
+            # Registering as the head of the desk (keeps an existing code).
             head = self.state.accounts.head_email()
             if head and head != email:
                 self._send(pages.login_page(
                     self._head_exists(),
                     error="A head of the desk is already registered — "
-                          "sign in with that email instead."))
+                          "sign in with that email and code instead."))
                 return
-            pending = {"name": name, "group_id": ROOT_ID,
-                       "is_leader": True, "is_root": True}
-        else:
-            # Returning sign-in — the account must already exist.
-            acct = self.state.accounts.get(email)
-            if not acct or not acct.get("verified"):
-                self._send(pages.login_page(
-                    self._head_exists(),
-                    error="No account for that email yet. Enter your name to "
-                          "register as head, or open an invite link."))
-                return
-            pending = None
-        issue_code(self.state, email, pending)
-        self._redirect(f"/verify?email={quote_plus(email)}")
-
-    def _handle_verify(self, field) -> None:
-        email = normalize_email(field("email"))[:120]
-        code = field("code")[:12]
-        acct = self.state.accounts.verify(email, code)
+            self._register(email, name, ROOT_ID, True, True)
+            return
+        # Returning sign-in: email + the code you kept.
+        if not code:
+            self._send(pages.login_page(
+                self._head_exists(),
+                error="Enter your sign-in code, or register as head / open an "
+                      "invite link."))
+            return
+        acct = self.state.accounts.check(email, code)
         if acct is None:
-            dev_code = "" if smtp_configured() else \
-                (self.state.accounts.get(email) or {}).get("code", "")
-            self._send(pages.verify_page(
-                email, dev_code=dev_code,
-                error="That code is wrong or has expired. Try again."))
+            self._send(pages.login_page(
+                self._head_exists(),
+                error="That email and code don't match. Check your code and "
+                      "try again."))
             return
         gid = acct.get("group_id") or ROOT_ID
         name = acct.get("name", "")
         is_leader = bool(acct.get("is_leader"))
-        g = self.state.org.get(gid)
-        if gid == ROOT_ID:
-            self.state.org.update_group(ROOT_ID, leader=name)
-        elif g is None:
+        if gid != ROOT_ID and self.state.org.get(gid) is None:
             self._send(pages.login_page(
                 self._head_exists(),
                 error="Your group no longer exists — ask for a fresh invite link."))
             return
-        elif is_leader and not g.get("leader"):
-            self.state.org.update_group(gid, leader=name)
+        if gid == ROOT_ID:
+            self.state.org.update_group(ROOT_ID, leader=name)
         self._redirect("/" if is_leader else "/me",
                        set_cookie=make_user_cookie(gid, name, is_leader))
 
@@ -882,10 +881,7 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         if err:
             self._send(pages.join_page(g.get("team_name", gid), role, token, error=err))
             return
-        pending = {"name": name, "group_id": gid,
-                   "is_leader": role == "leader", "is_root": False}
-        issue_code(self.state, email, pending)
-        self._redirect(f"/verify?email={quote_plus(email)}")
+        self._register(email, name, gid, role == "leader", False)
 
     # -- routes -------------------------------------------------------------
     def do_GET(self):  # noqa: N802 (http.server API)
@@ -908,16 +904,6 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
                 self._redirect("/" if user["is_leader"] else "/me")
             else:
                 self._send(pages.login_page(self._head_exists()))
-            return
-        if path == "/verify":
-            email = normalize_email(qs.get("email", [""])[0])[:120]
-            acct = self.state.accounts.get(email)
-            if not acct or not acct.get("code"):
-                self._redirect("/login")
-                return
-            # In dev (no SMTP configured) show the code so sign-in works now.
-            dev_code = "" if smtp_configured() else acct.get("code", "")
-            self._send(pages.verify_page(email, dev_code=dev_code))
             return
         if path == "/logout":
             self._redirect("/login", set_cookie=clear_user_cookie())
@@ -1002,7 +988,7 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):  # noqa: N802
         path = urlparse(self.path).path
-        if path not in ("/updates", "/tasks", "/login", "/verify", "/join",
+        if path not in ("/updates", "/tasks", "/login", "/join",
                         "/groups", "/settings"):
             self._send("Not found.", "text/plain; charset=utf-8", 404)
             return
@@ -1015,9 +1001,6 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
 
         if path == "/login":
             self._handle_login(field)
-            return
-        if path == "/verify":
-            self._handle_verify(field)
             return
         if path == "/join":
             self._handle_join(field)
