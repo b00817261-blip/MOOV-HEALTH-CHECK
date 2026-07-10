@@ -66,7 +66,6 @@ join with an invite link:
 | `/groups` | Set up the desk: add or remove the **groups** that report to you (Operations, Documentation, IT, …) and their leads. Starts empty — you model your real org, nothing is pre-invented. |
 | `/tasks` | The **task board**: assign a task to a group/person with a deadline and watch statuses move. The manager assigns and removes — each group ticks its own work. |
 | `/calendar` | A month view of every deadline and every filed report — click a day to open its dashboard. |
-| `/history` | **Saved reports**: every day the teams have reported, plus a consolidated table over any date range. |
 
 ### 🧑‍🔧 A group lead's workspace (green)
 
@@ -340,7 +339,7 @@ src/moov_health_check/
   focus.py     # work-focus recommendation engine + fleet themes
   report.py    # terminal / markdown / html / json renderers
   tasks.py     # the shared task list (assign, update status, tick done)
-  pages.py     # HTML pages: tasks, calendar, saved reports
+  pages.py     # HTML pages: tasks, calendar, notifications
   web.py       # the website: routing + dashboard + submission form (stdlib http.server)
   sample.py    # synthetic global data for --demo
   cli.py       # `serve`, `submit`, and `report` subcommands

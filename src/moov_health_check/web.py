@@ -14,7 +14,6 @@ Pages
 * ``/tasks``        – the task board: the manager assigns, groups tick off
 * ``/groups``       – manager: set up the groups that report to him
 * ``/calendar``     – month view of deadlines & update days
-* ``/history``      – saved reports: browse back & consolidate over a range
 * ``/report.json``  – machine-readable KPI report (CLI-compatible)
 
 There is no separate report form: group leads just update their tasks —
@@ -629,14 +628,6 @@ def calendar_page(state: AppState, user: dict, month: str) -> str:
     )
 
 
-def history_page(state: AppState, user: dict, date_from: str = "",
-                 date_to: str = "") -> str:
-    return pages.history_page(
-        state.tasks.load(), _scoped_roster(state, user), _today(),
-        date_from=date_from, date_to=date_to, user=user,
-    )
-
-
 def groups_page(state: AppState, user: dict, toast: str = "",
                 error: str = "", base_url: str = "") -> str:
     return pages.groups_page(state, user, toast=toast, error=error,
@@ -987,7 +978,7 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
             self._send(pages.join_page(g.get("team_name", gid), role, token))
             return
         if path not in ("/", "/me", "/tasks", "/notifications", "/calendar",
-                        "/history", "/groups", "/settings"):
+                        "/groups", "/settings"):
             self._send("Not found.", "text/plain; charset=utf-8", 404)
             return
 
@@ -1033,17 +1024,6 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
                 self._send("Bad month — use YYYY-MM.", "text/plain; charset=utf-8", 400)
                 return
             self._send(calendar_page(self.state, user, month))
-        elif path == "/history":
-            if not is_leader:
-                self._redirect("/me")
-                return
-            date_from = (qs.get("from", [""])[0])[:10]
-            date_to = (qs.get("to", [""])[0])[:10]
-            if (date_from and not _DATE_RE.match(date_from)) or \
-               (date_to and not _DATE_RE.match(date_to)):
-                self._send("Bad date — use YYYY-MM-DD.", "text/plain; charset=utf-8", 400)
-                return
-            self._send(history_page(self.state, user, date_from, date_to))
         elif path == "/groups":
             if not is_leader:
                 self._redirect("/me")

@@ -115,7 +115,7 @@ def lead(server, gid="t1", name="Lena", email=None) -> Client:
 
 def test_anonymous_is_sent_to_login(server):
     c = Client(server)
-    for path in ("/", "/me", "/tasks", "/calendar", "/history",
+    for path in ("/", "/me", "/tasks", "/calendar",
                  "/groups", "/settings"):
         _, body = c.get(path)  # follows the redirect
         assert "Pick" not in body  # (old copy) — new login shows the doors:
@@ -164,7 +164,7 @@ def test_login_and_join_flow(server):
 
 def test_member_cannot_open_leader_pages(server):
     w = member(server, "t1", "Aki")
-    for path in ("/", "/history", "/groups", "/settings"):
+    for path in ("/", "/groups", "/settings"):
         _, body = w.get(path)
         assert "Today's tasks" in body, path  # bounced to /me
 
@@ -382,7 +382,7 @@ def test_bad_date_and_unknown_path(server):
 
 
 # ---------------------------------------------------------------------------
-# Task board, calendar & history
+# Task board & calendar
 # ---------------------------------------------------------------------------
 
 def test_done_survey_from_the_board(server):
@@ -587,20 +587,3 @@ def test_dashboard_report_from_updates(server):
     assert "wrapped it up" in body
     assert "System issue" in body and "portal was down" in body
     assert "in Teams" in body
-
-
-def test_history_and_consolidated_report(server):
-    m = head(server)
-    _, body = m.post("/tasks", {"action": "add", "title": "Recurring job",
-                                "team_id": "t1"})
-    tid = _task_id(body)
-    store = HealthCheckHandler.state.tasks
-    store.record_update(tid, "2026-07-07", status="doing", note="Monday things")
-    store.record_update(tid, DAY, status="done", note="Tuesday things")
-
-    _, body = m.get("/history")
-    assert "Saved reports" in body and "Consolidated report" in body
-    assert "Monday things" in body and "Tuesday things" in body
-
-    _, body = m.get(f"/history?from={DAY}&to={DAY}")
-    assert "Tuesday things" in body and "Monday things" not in body

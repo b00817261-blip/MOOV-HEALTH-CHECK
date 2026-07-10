@@ -1,5 +1,4 @@
-"""HTML pages for the website beyond the dashboard: tasks, calendar,
-and the saved-reports history.
+"""HTML pages for the website beyond the dashboard: tasks and calendar.
 
 Everything here is plain string templating over the stdlib — no template
 engine, no JS framework, no external assets. Each builder returns a full
@@ -169,7 +168,6 @@ def nav(active: str, day: str, user: dict | None = None) -> str:
             ("tasks", "/tasks", "✅ Tasks"),
             ("notifications", "/notifications", f"🔔 Notifications{badge}"),
             ("calendar", f"/calendar?month={month}", "🗓 Calendar"),
-            ("history", "/history", "🗂 Saved reports"),
             ("groups", "/groups", "👥 Groups & invites"),
             ("settings", "/settings", "⚙️ Settings"),
         ]
@@ -610,77 +608,6 @@ def calendar_page(roster: dict, tasks: list, reports_by_day: dict,
 <table class="cal"><thead><tr>{head}</tr></thead><tbody>{''.join(body_rows)}</tbody></table>
 </div>"""
     return shell(f"Calendar — {month_name}", "calendar", today, body, user=user)
-
-
-# ---------------------------------------------------------------------------
-# /history — saved & consolidated reports
-# ---------------------------------------------------------------------------
-
-def history_page(tasks: list, roster: dict, today: str,
-                 date_from: str = "", date_to: str = "",
-                 user: dict | None = None) -> str:
-    """Every day the groups have updated their work — the saved daily reports."""
-    team_names = {tid: info.get("team_name", tid) for tid, info in roster.items()}
-    by_day = tasks_mod.updated_days(tasks)
-    days = sorted(by_day, reverse=True)
-    if date_from:
-        days = [d for d in days if d >= date_from]
-    if date_to:
-        days = [d for d in days if d <= date_to]
-    days = days[:60]  # keep the page bounded
-
-    cards = []
-    consolidated = []
-    for d in days:
-        done_n = friction_n = 0
-        for t in tasks:
-            upd = tasks_mod.update_for_day(t, d)
-            if not upd:
-                continue
-            if upd.get("status") == "done":
-                done_n += 1
-            if upd.get("friction"):
-                friction_n += 1
-            group = team_names.get(t.get("team_id", ""), t.get("assignee", "")) or "—"
-            icon = "✓" if upd.get("status") == "done" else "🕓"
-            note = f' — {esc(upd["note"])}' if upd.get("note") else ""
-            fr = ""
-            if upd.get("friction"):
-                label = tasks_mod.FRICTION_REASONS.get(upd["friction"], upd["friction"])
-                detail = ": " + esc(upd["friction_note"]) if upd.get("friction_note") else ""
-                fr = f'<div style="color:#d99513;font-size:12px">⚠ {esc(label)}{detail}</div>'
-            consolidated.append(
-                f'<tr><td class="muted" style="white-space:nowrap">{d}</td>'
-                f'<td>{esc(group)}</td>'
-                f'<td>{icon} <b>{esc(t.get("title", ""))}</b>{note}{fr}</td></tr>'
-            )
-        friction_note = (f' · <span style="color:var(--orange)">{friction_n} friction flag(s)</span>'
-                         if friction_n else "")
-        cards.append(f"""<div style="padding:10px 2px;border-bottom:1px solid var(--line)">
-<b><a href="/?date={d}">{d}</a></b>
-<span class="muted"> — {by_day[d]} update(s) · {done_n} done{friction_note}</span>
-<span style="float:right"><a href="/?date={d}">dashboard</a></span>
-</div>""")
-
-    if not cards:
-        cards.append('<div class="muted" style="padding:8px 2px">No saved reports in this range yet.</div>')
-    if not consolidated:
-        consolidated.append('<tr><td colspan="3" class="muted">Nothing to consolidate yet.</td></tr>')
-
-    body = f"""<h1>🗂 Saved reports</h1>
-<div class="sub">Every day the groups have updated their work — browse back, or pull a consolidated view over a date range.</div>
-<form method="get" action="/history" class="filters">
-  <label class="muted">Date from</label> <input type="date" name="from" value="{esc(date_from)}">
-  <label class="muted">Date to</label> <input type="date" name="to" value="{esc(date_to)}">
-  <button type="submit" class="ghost">Filter</button>
-  {f'<a href="/history">clear</a>' if (date_from or date_to) else ''}
-</form>
-<div class="card">{''.join(cards)}</div>
-<h2>Consolidated report</h2>
-<div class="card" style="padding:0 8px">
-<table><thead><tr><th>Date</th><th>Group</th><th>Update</th></tr></thead>
-<tbody>{''.join(consolidated)}</tbody></table></div>"""
-    return shell("Saved reports", "history", today, body, user=user)
 
 
 # ---------------------------------------------------------------------------
