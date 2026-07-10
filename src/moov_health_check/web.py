@@ -102,32 +102,41 @@ def smtp_configured() -> bool:
 
 
 def send_code_email(email: str, code: str) -> bool:
-    """Email a verification code via SMTP (stdlib only). Returns True if sent.
+    """Email someone their permanent sign-in code via SMTP (stdlib only).
+    Returns True if sent, False if not configured or the send failed.
 
-    Configure with env vars: MOOV_SMTP_HOST (required), MOOV_SMTP_PORT (587),
-    MOOV_SMTP_USER, MOOV_SMTP_PASS, MOOV_SMTP_FROM. Works with Resend /
-    SendGrid / Gmail SMTP — any provider with a free tier.
+    Env vars: MOOV_SMTP_HOST (required), MOOV_SMTP_PORT (default 587),
+    MOOV_SMTP_USER, MOOV_SMTP_PASS, MOOV_SMTP_FROM (the from address),
+    MOOV_SMTP_FROM_NAME (default "MOOV"). Port 465 uses implicit SSL; any other
+    port uses STARTTLS. Works with Resend / SendGrid / Gmail SMTP — any provider
+    with a free tier.
     """
     host = os.environ.get("MOOV_SMTP_HOST")
     if not host:
         return False
     user = os.environ.get("MOOV_SMTP_USER", "")
-    sender = os.environ.get("MOOV_SMTP_FROM", user or "no-reply@moov.local")
+    from_addr = os.environ.get("MOOV_SMTP_FROM", user or "no-reply@moov.local")
+    from_name = os.environ.get("MOOV_SMTP_FROM_NAME", "MOOV")
     port = int(os.environ.get("MOOV_SMTP_PORT", "587") or "587")
     msg = EmailMessage()
     msg["Subject"] = "Your MOOV sign-in code"
-    msg["From"] = sender
+    msg["From"] = f"{from_name} <{from_addr}>"
     msg["To"] = email
     msg.set_content(
-        f"Your MOOV verification code is: {code}\n\n"
-        "It expires in 15 minutes. If you didn't request this, ignore this email."
+        f"Your MOOV sign-in code is: {code}\n\n"
+        "Keep it — you sign in with your email and this same code, every time, "
+        "on any device.\n\nIf you didn't request this, you can ignore this email."
     )
     try:
-        with smtplib.SMTP(host, port, timeout=15) as s:
-            s.starttls()
+        if port == 465:
+            smtp = smtplib.SMTP_SSL(host, port, timeout=15)
+        else:
+            smtp = smtplib.SMTP(host, port, timeout=15)
+            smtp.starttls()
+        with smtp:
             if user:
-                s.login(user, os.environ.get("MOOV_SMTP_PASS", ""))
-            s.send_message(msg)
+                smtp.login(user, os.environ.get("MOOV_SMTP_PASS", ""))
+            smtp.send_message(msg)
         return True
     except Exception as exc:  # noqa: BLE001 — never break sign-in on mail errors
         print(f"  [email] could not send code to {email}: {exc}")
@@ -1115,6 +1124,11 @@ def serve(reports_dir: str, roster_path: str, config_path: str | None,
     print(f"    → the manager gets the completion dashboard, task board & groups")
     print(f"    → group leads just update their tasks; the report assembles itself")
     print(f"  Data dir:      {reports_dir}")
+    if smtp_configured():
+        print(f"  Email:         on — codes sent via {os.environ['MOOV_SMTP_HOST']}")
+    else:
+        print("  Email:         off — sign-in codes are shown on screen "
+              "(set MOOV_SMTP_* to email them)")
     print("Press Ctrl+C to stop.")
     try:
         httpd.serve_forever()

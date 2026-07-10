@@ -23,6 +23,12 @@ services:
       # this at the mount path so nothing is lost between deploys.
       - key: MOOV_DATA_DIR
         value: reports
+      # --- Email sign-in codes (optional) — see EMAIL_SETUP.md ---
+      # Add these in the Render dashboard (Environment tab) so codes get
+      # emailed instead of shown on screen. Example values for Resend:
+      #   MOOV_SMTP_HOST=smtp.resend.com   MOOV_SMTP_PORT=587
+      #   MOOV_SMTP_USER=resend            MOOV_SMTP_PASS=<your Resend API key>
+      #   MOOV_SMTP_FROM=onboarding@resend.dev   MOOV_SMTP_FROM_NAME=MOOV
     # --- Uncomment for permanent storage (paid disk) ---
     # disk:
     #   name: moov-data
