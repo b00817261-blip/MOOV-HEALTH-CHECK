@@ -496,18 +496,21 @@ def tasks_page(roster: dict, tasks: list, today: str, user: dict | None = None,
 
 _TASKS_CSS = """
 details.reqform, details.donesurvey { margin-top: 8px; }
+/* The disclosure summaries look and act like real buttons. */
 details.reqform summary, details.donesurvey summary { list-style: none;
-  cursor: pointer; font-size: 13px; display: inline-block; }
-details.reqform summary { color: #d99513; }
-details.donesurvey summary { color: #1e9e5a; font-weight: 600; }
+  cursor: pointer; font-size: 13px; font-weight: 700; display: inline-block;
+  padding: 8px 14px; border-radius: 10px; border: 1px solid; background: #fff; }
 details.reqform summary::-webkit-details-marker,
 details.donesurvey summary::-webkit-details-marker { display: none; }
-details.reqform[open] summary, details.donesurvey[open] summary { margin-bottom: 4px; }
-details.reqform .q, details.donesurvey .q { font-size: 12px; color: #8a8f98; margin: 8px 0 4px; }
-details.reqform label, details.donesurvey label { color: #b7bcc4; }
-@media (prefers-color-scheme: light) {
-  details.reqform label, details.donesurvey label { color: #5a6068; }
-}
+details.donesurvey summary { color: var(--green); border-color: #bfe6d1; }
+details.donesurvey summary:hover { background: #eafaf1; }
+details.reqform summary { color: var(--orange); border-color: #f4c9b4; }
+details.reqform summary:hover { background: #fdefe8; }
+details.reqform summary:focus-visible, details.donesurvey summary:focus-visible {
+  outline: 2px solid var(--navy); outline-offset: 2px; }
+details.reqform[open] summary, details.donesurvey[open] summary { margin-bottom: 8px; }
+details.reqform .q, details.donesurvey .q { font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
+details.reqform label, details.donesurvey label { color: var(--ink2); }
 """
 
 
