@@ -72,6 +72,9 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var
 .topnav a { padding: 7px 12px; border-radius: 9px; color: var(--ink2); font-weight: 500; }
 .topnav a:hover { background: #f1f4f7; color: var(--ink); }
 .topnav a.active { color: var(--navy); font-weight: 700; background: #eaf0f6; }
+.navbadge { display: inline-block; min-width: 18px; height: 18px; padding: 0 5px;
+  margin-left: 5px; border-radius: 10px; background: var(--orange); color: #fff;
+  font-size: 11px; font-weight: 800; line-height: 18px; text-align: center; vertical-align: 1px; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px;
   margin-bottom: 16px; box-shadow: 0 1px 2px rgba(16,49,79,.05); }
 .grid2 { display: grid; grid-template-columns: 1.5fr 1fr; gap: 16px; }
@@ -159,9 +162,12 @@ def nav(active: str, day: str, user: dict | None = None) -> str:
     d = esc(day)
     month = esc(day[:7])
     if user and user.get("is_leader"):
+        n = user.get("notif_count") or 0
+        badge = f'<span class="navbadge">{n}</span>' if n else ""
         links = [
             ("dashboard", f"/?date={d}", "📊 Dashboard"),
             ("tasks", "/tasks", "✅ Tasks"),
+            ("notifications", "/notifications", f"🔔 Notifications{badge}"),
             ("calendar", f"/calendar?month={month}", "🗓 Calendar"),
             ("history", "/history", "🗂 Saved reports"),
             ("groups", "/groups", "👥 Groups & invites"),
@@ -1171,7 +1177,7 @@ def _initials(name: str) -> str:
     return (words[0][0] + words[1][0]).upper()
 
 
-def _requests_card(requests: list) -> str:
+def _requests_card(requests: list, back: str = "dash") -> str:
     """The leader's inbox of 'can't do it' / 'extend the deadline' requests."""
     if not requests:
         return ""
@@ -1196,7 +1202,7 @@ def _requests_card(requests: list) -> str:
                     f'<input type="hidden" name="id" value="{tid}">'
                     f'<input type="hidden" name="request_id" value="{rid}">'
                     f'<input type="hidden" name="decision" value="{decision}">'
-                    f'<input type="hidden" name="back" value="dash">'
+                    f'<input type="hidden" name="back" value="{esc(back)}">'
                     f'<button type="submit"{cls}>{label}</button></form>')
 
         items.append(
@@ -1212,6 +1218,55 @@ def _requests_card(requests: list) -> str:
             f'<h3>⏳ Requests to review '
             f'<span class="muted">· {len(requests)} pending</span></h3>'
             f'<ul style="list-style:none;margin:0;padding:0">{"".join(items)}</ul></div>')
+
+
+def notifications_page(stats: dict, day: str, user: dict | None = None,
+                       toast: str = "", error: str = "") -> str:
+    """One place for everything that needs the lead's attention: people who
+    flagged 'can't do it' / need more time, plus friction raised today."""
+    requests = stats.get("requests", [])
+    friction = stats.get("friction_items", [])
+    toast_html = ""
+    if toast:
+        toast_html = f'<div class="toast">✓ {esc(toast)}</div>'
+    if error:
+        toast_html = f'<div class="toast error">⚠ {esc(error)}</div>'
+
+    req_html = _requests_card(requests, back="notif")
+
+    fr_rows = []
+    for f in friction:
+        note = (f' — <span class="muted">{esc(f["note"])}</span>' if f.get("note")
+                else "")
+        fr_rows.append(
+            f'<li style="padding:11px 2px;border-bottom:1px solid var(--line)">'
+            f'<b>{esc(f["title"])}</b> <span class="muted">· {esc(f["group"])}</span>'
+            f'<span class="rep-chip" style="border-color:#f4c9b4;color:var(--orange);'
+            f'margin-left:6px">⚠ {esc(f["reason"])}</span>{note}</li>')
+    fr_html = ""
+    if fr_rows:
+        fr_html = (f'<div class="card"><h3>⚠ Friction reported today '
+                   f'<span class="muted">· {len(fr_rows)}</span></h3>'
+                   f'<ul style="list-style:none;margin:0;padding:0">{"".join(fr_rows)}</ul></div>')
+
+    if not requests and not fr_rows:
+        empty = ('<div class="card" style="text-align:center;padding:40px">'
+                 '<h3>You\'re all caught up 🎉</h3>'
+                 '<div class="sub" style="margin:0">No requests to review and no '
+                 'friction flagged today.</div></div>')
+    else:
+        empty = ""
+
+    body = f"""<div class="eyebrow">Notifications</div>
+<h1 style="margin-top:2px">🔔 Notifications</h1>
+<div class="sub">Everything that needs you — deadline requests, "can't do it"
+flags, and friction your groups raised today.</div>
+{toast_html}
+{req_html}
+{fr_html}
+{empty}"""
+    return shell("Notifications", "notifications", day, body,
+                 extra_css=_DASH_CSS, user=user)
 
 
 def completion_dashboard(stats: dict, day: str, user: dict | None = None,

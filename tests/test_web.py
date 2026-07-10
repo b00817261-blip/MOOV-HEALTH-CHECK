@@ -426,6 +426,36 @@ def test_person_picker_lists_registered_people(server):
     assert '<option value="Lena">Lena · Team Two (lead)</option>' in body
 
 
+def test_notifications_tab_flags_requests(server):
+    m = head(server)
+    _, body = m.post("/tasks", {"action": "add", "title": "Audit prep",
+                                "team_id": "t1"})
+    tid = _task_id(body)
+    # No flags yet — the tab has no badge and says caught up.
+    _, body = m.get("/notifications")
+    assert 'class="navbadge"' not in body
+    assert "caught up" in body
+
+    # A member flags "can't do it".
+    w = member(server, "t1", "Aki")
+    w.post("/tasks", {"action": "request", "id": tid, "reason": "time"})
+
+    # The lead now sees a badge in the nav and the request on the tab.
+    _, nav = m.get("/")
+    assert '<span class="navbadge">1</span>' in nav
+    _, body = m.get("/notifications")
+    assert "Requests to review" in body and "Audit prep" in body
+
+    # Resolving it from the tab redirects back to the tab and clears the badge.
+    rid = _request_id(server, tid)
+    _, body = m.post("/tasks", {"action": "resolve", "id": tid,
+                                "request_id": rid, "decision": "decline",
+                                "back": "notif"})
+    assert "Request declined" in body            # landed back on /notifications
+    _, nav = m.get("/")
+    assert 'class="navbadge"' not in nav
+
+
 def test_task_lifecycle(server):
     m = head(server)
     _, body = m.get("/tasks")

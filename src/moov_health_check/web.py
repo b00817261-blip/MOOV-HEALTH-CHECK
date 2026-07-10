@@ -159,16 +159,17 @@ def parse_user(state: AppState, cookie_header: str | None) -> dict | None:
     if g is None:  # their group is gone — sign in / rejoin
         return None
     is_leader = leader_flag == "1"
+    is_root = group_id == ROOT_ID
     if is_leader:
         scope = [gid for gid in state.org.subtree_ids(group_id, groups)
                  if gid != ROOT_ID]
     else:
-        scope = [] if group_id == ROOT_ID else [group_id]
-    return {
+        scope = [] if is_root else [group_id]
+    user = {
         "group_id": group_id,
         "name": name,
         "is_leader": is_leader,
-        "is_root": group_id == ROOT_ID,
+        "is_root": is_root,
         "group_name": g.get("team_name", group_id),
         "scope": scope,
         # Compatibility shims for existing page code:
@@ -176,6 +177,20 @@ def parse_user(state: AppState, cookie_header: str | None) -> dict | None:
         "team_id": group_id,
         "team_name": g.get("team_name", group_id),
     }
+    if is_leader:
+        # How many things need this lead's attention right now — shown as a
+        # badge on the 🔔 Notifications tab from every page.
+        user["notif_count"] = _pending_request_count(state, is_root, set(scope))
+    return user
+
+
+def _pending_request_count(state: AppState, is_root: bool, scope: set) -> int:
+    n = 0
+    for task, _req in tasks_mod.pending_requests(state.tasks.load()):
+        gid = task.get("team_id")
+        if is_root or gid in scope:
+            n += 1
+    return n
 
 
 def _shift_date(day: str, delta_days: int) -> str:
@@ -473,6 +488,14 @@ def dashboard_page(state: AppState, day: str, submitted_team: str = "",
         completion_stats(state, day, roster, span=span), day, user=user,
         submitted=submitted_team, toast=toast, error=error, span=span
     )
+
+
+def notifications_page(state: AppState, day: str, user: dict | None = None,
+                       toast: str = "", error: str = "") -> str:
+    roster = _scoped_roster(state, user)
+    return pages.notifications_page(
+        completion_stats(state, day, roster), day, user=user,
+        toast=toast, error=error)
 
 
 def handle_groups_action(state: AppState, form: dict, user: dict) -> tuple[bool, str]:
@@ -963,7 +986,7 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
             g = self.state.org.get(gid)
             self._send(pages.join_page(g.get("team_name", gid), role, token))
             return
-        if path not in ("/", "/me", "/tasks", "/calendar",
+        if path not in ("/", "/me", "/tasks", "/notifications", "/calendar",
                         "/history", "/groups", "/settings"):
             self._send("Not found.", "text/plain; charset=utf-8", 404)
             return
@@ -996,6 +1019,14 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
             toast = (qs.get("ok", [""])[0])[:120]
             error = (qs.get("err", [""])[0])[:120]
             self._send(tasks_page(self.state, user, team, status, toast, error))
+        elif path == "/notifications":
+            if not is_leader:
+                self._redirect("/me")
+                return
+            toast = (qs.get("ok", [""])[0])[:160]
+            error = (qs.get("err", [""])[0])[:160]
+            self._send(notifications_page(self.state, day, user=user,
+                                          toast=toast, error=error))
         elif path == "/calendar":
             month = (qs.get("month", [""])[0] or _today()[:7]).strip()
             if not _MONTH_RE.match(month):
@@ -1079,6 +1110,8 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
                 self._redirect(f"/me?{key}={quote_plus(message)}")
             elif back == "dash":
                 self._redirect(f"/?{key}={quote_plus(message)}")
+            elif back == "notif":
+                self._redirect(f"/notifications?{key}={quote_plus(message)}")
             else:
                 sep = "&" if back else ""
                 self._redirect(f"/tasks?{back}{sep}{key}={quote_plus(message)}")
