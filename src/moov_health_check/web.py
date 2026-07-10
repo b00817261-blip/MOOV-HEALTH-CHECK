@@ -1235,7 +1235,7 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
                 return
             try:
                 self.state.comments.add(gid, day, user.get("name", ""),
-                                        field("text"))
+                                        field("text"), verdict=field("verdict"))
                 self._redirect(f"/?date={day}&ok=" + quote_plus("Comment posted."))
             except ValueError as e:
                 self._redirect(f"/?date={day}&err=" + quote_plus(str(e)))

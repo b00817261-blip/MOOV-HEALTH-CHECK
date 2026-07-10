@@ -38,11 +38,17 @@ class CommentStore:
         self.path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n",
                              encoding="utf-8")
 
-    def add(self, group_id: str, day: str, by: str, text: str) -> dict:
+    def add(self, group_id: str, day: str, by: str, text: str,
+            verdict: str = "") -> dict:
+        """``verdict`` is the boss's quick take — "yes" (liked the work),
+        "no" (needs improvement), or "" — alongside optional free text."""
         text = (text or "").strip()[:500]
-        if not text:
-            raise ValueError("Write a comment first.")
-        comment = {"by": (by or "").strip(), "text": text, "at": _now()}
+        if verdict not in ("yes", "no", ""):
+            raise ValueError("Unknown verdict.")
+        if not text and not verdict:
+            raise ValueError("Pick 👍 or 👎, or write a comment.")
+        comment = {"by": (by or "").strip(), "text": text,
+                   "verdict": verdict, "at": _now()}
         with self._lock:
             data = self._load()
             data.setdefault(day, {}).setdefault(group_id, []).append(comment)

@@ -540,15 +540,26 @@ def test_boss_comments_on_the_days_report(server):
     today = _dt.date.today().isoformat()   # the log lands on the real today
 
     # The head comments on Team One's report; it shows on the dashboard...
-    _, body = m.post("/comment", {"id": "t1", "day": today,
+    _, body = m.post("/comment", {"id": "t1", "day": today, "verdict": "yes",
                                   "text": "Nice work — chase the carrier tomorrow."})
     assert "Comment posted" in body
     _, dash = m.get("/")
     assert "chase the carrier tomorrow" in dash and "Derek" in dash
+    assert "Did you like the work?" in dash        # the 👍/👎 choice on the form
+    assert "Liked the work" in dash                # the verdict chip
 
     # ...and the group sees it on their My day.
     _, me = w.get("/me")
     assert "From the boss" in me and "chase the carrier tomorrow" in me
+    assert "Liked the work" in me
+
+    # A 👎 with no text is a valid comment on its own; an empty one is not.
+    _, body = m.post("/comment", {"id": "t1", "day": today, "verdict": "no"})
+    assert "Comment posted" in body
+    _, me = w.get("/me")
+    assert "Needs improvement" in me
+    _, body = m.post("/comment", {"id": "t1", "day": today})
+    assert "write a comment" in body
 
     # A leader can't comment outside their subtree; members not at all.
     boss2 = lead(server, "t2", "Lena")
@@ -557,7 +568,8 @@ def test_boss_comments_on_the_days_report(server):
     _, body = w.post("/comment", {"id": "t1", "day": today, "text": "hi"})
     assert "Today's tasks" in body               # bounced to /me
     stored = HealthCheckHandler.state.comments.for_day(today)["t1"]
-    assert len(stored) == 1                      # only Derek's comment landed
+    assert all(c["by"] == "Derek" for c in stored)   # only the head's landed
+    assert len(stored) == 2                          # 👍+text, then the bare 👎
 
 
 def test_task_lifecycle(server):

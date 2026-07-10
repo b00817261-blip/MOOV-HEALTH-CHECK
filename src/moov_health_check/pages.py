@@ -1123,8 +1123,9 @@ def me_page(user: dict, tasks: list, today: str, channels: list | None = None,
     boss_html = ""
     if comments:
         lines = "".join(
-            f'<div class="repline">💬 <b>{esc(c.get("by") or "The boss")}</b> — '
-            f'{esc(c.get("text", ""))} '
+            f'<div class="repline">💬 <b>{esc(c.get("by") or "The boss")}</b>'
+            f'{_verdict_chip(c.get("verdict", ""))}'
+            f'{" — " + esc(c["text"]) if c.get("text") else ""} '
             f'<span class="muted" style="font-size:11px">{esc(c.get("at", ""))}</span></div>'
             for c in comments)
         boss_html = (f'<div class="card" style="border-left:4px solid var(--navy)">'
@@ -1274,6 +1275,17 @@ def _metric(icon: str, num, label: str) -> str:
             f'<div><div class="m-num">{num}</div><div class="m-lbl">{esc(label)}</div></div></div>')
 
 
+def _verdict_chip(verdict: str) -> str:
+    """The boss's quick take on a report — 👍 liked it / 👎 needs improvement."""
+    if verdict == "yes":
+        return ('<span class="rep-chip" style="border-color:#bfe6d1;'
+                'color:var(--green)">👍 Liked the work</span>')
+    if verdict == "no":
+        return ('<span class="rep-chip" style="border-color:#f4c9b4;'
+                'color:var(--orange)">👎 Needs improvement</span>')
+    return ""
+
+
 def group_report_cards(group_reports: list, silent: list,
                        comments: dict | None = None, day: str = "",
                        can_comment: bool = False) -> str:
@@ -1317,20 +1329,29 @@ def group_report_cards(group_reports: list, silent: list,
                           f'color:#d99513">⚠ {fr}</span>')
             out.append(f'<div class="repline">{icon} <b>{esc(it["title"])}</b>{note}{chips}</div>')
         for c in comments.get(g.get("id", ""), []):
+            text = f' — {esc(c["text"])}' if c.get("text") else ""
             out.append(
                 f'<div class="repline" style="background:#eaf0f6;border-radius:8px;'
                 f'padding:9px 10px;border-bottom:0;margin-top:6px">💬 '
-                f'<b>{esc(c.get("by") or "The boss")}</b> — {esc(c.get("text", ""))} '
+                f'<b>{esc(c.get("by") or "The boss")}</b>'
+                f'{_verdict_chip(c.get("verdict", ""))}{text} '
                 f'<span class="muted" style="font-size:11px">{esc(c.get("at", ""))}</span></div>')
         if can_comment and day:
+            gid = esc(g.get("id", ""))
             out.append(
-                f'<form method="post" action="/comment" style="display:flex;gap:8px;'
-                f'margin:8px 0 2px;align-items:center">'
-                f'<input type="hidden" name="id" value="{esc(g.get("id", ""))}">'
+                f'<form method="post" action="/comment" style="display:flex;gap:10px;'
+                f'margin:8px 0 2px;align-items:center;flex-wrap:wrap">'
+                f'<input type="hidden" name="id" value="{gid}">'
                 f'<input type="hidden" name="day" value="{esc(day)}">'
-                f'<input type="text" name="text" placeholder="Comment on this report…" '
-                f'style="flex:1;font-size:13px" maxlength="500" required>'
-                f'<button type="submit" class="ghost">💬 Comment</button></form>')
+                f'<span style="font-size:12px;font-weight:700;color:var(--muted)">'
+                f'Did you like the work?</span>'
+                f'<label style="font-size:13px;font-weight:600;color:var(--green)">'
+                f'<input type="radio" name="verdict" value="yes"> 👍 Yes</label>'
+                f'<label style="font-size:13px;font-weight:600;color:var(--orange)">'
+                f'<input type="radio" name="verdict" value="no"> 👎 No</label>'
+                f'<input type="text" name="text" placeholder="Add a comment (optional)…" '
+                f'style="flex:1;min-width:180px;font-size:13px" maxlength="500">'
+                f'<button type="submit" class="ghost">💬 Send</button></form>')
     if silent:
         out.append(f'<div class="muted" style="margin-top:12px;font-size:13px">'
                    f'⚠ No updates yet from: {esc(", ".join(silent))}</div>')
