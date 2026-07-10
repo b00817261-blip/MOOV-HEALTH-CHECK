@@ -64,6 +64,20 @@ class AccountStore:
                 return email
         return None
 
+    def people(self) -> list[dict]:
+        """Everyone who has registered, for the 'assign to person' picker."""
+        out = []
+        for acct in self._load().values():
+            if acct.get("name"):
+                out.append({
+                    "email": acct.get("email", ""),
+                    "name": acct["name"],
+                    "group_id": acct.get("group_id", ""),
+                    "is_leader": bool(acct.get("is_leader")),
+                    "is_root": bool(acct.get("is_root")),
+                })
+        return out
+
     # -- writing ------------------------------------------------------------
     def _save(self, accounts: dict) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)

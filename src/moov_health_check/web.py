@@ -549,11 +549,33 @@ def report_json(state: AppState, day: str) -> str:
 
 def tasks_page(state: AppState, user: dict, team: str = "", status: str = "",
                toast: str = "", error: str = "") -> str:
+    roster = _scoped_roster(state, user)
     return pages.tasks_page(
-        _scoped_roster(state, user), state.tasks.load(), _today(), user=user,
+        roster, state.tasks.load(), _today(), user=user,
         team_filter=team, status_filter=status, toast=toast, error=error,
-        channels=state.org.channels(),
+        channels=state.org.channels(), people=_scoped_people(state, user, roster),
     )
+
+
+def _scoped_people(state: AppState, user: dict, roster: dict) -> list[dict]:
+    """Registered people the leader may assign a task to — those in the groups
+    within their reach, each labelled with their group and role."""
+    scope = set(roster)
+    is_root = bool(user.get("is_root"))
+    names = {tid: info.get("team_name", tid) for tid, info in roster.items()}
+    out = []
+    for p in state.accounts.people():
+        gid = p["group_id"]
+        if gid == ROOT_ID:
+            continue  # the head assigns work; they aren't a pick-list entry
+        if not (is_root or gid in scope):
+            continue
+        role = "lead" if p["is_leader"] else "member"
+        out.append({"name": p["name"],
+                    "group": names.get(gid, gid),
+                    "role": role})
+    out.sort(key=lambda x: (x["group"].lower(), x["name"].lower()))
+    return out
 
 
 def calendar_page(state: AppState, user: dict, month: str) -> str:

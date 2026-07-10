@@ -392,6 +392,20 @@ def test_done_survey_from_the_board(server):
     assert "in Teams" in dash and "Not enough time" in dash
 
 
+def test_person_picker_lists_registered_people(server):
+    m = head(server)
+    # Before anyone joins a group, only the "anyone" option exists.
+    _, body = m.get("/tasks")
+    assert "anyone in the group" in body
+
+    # As people register into groups they appear in the picker.
+    member(server, "t1", "Aki")
+    lead(server, "t2", "Lena")
+    _, body = m.get("/tasks")
+    assert '<option value="Aki">Aki · Team One (member)</option>' in body
+    assert '<option value="Lena">Lena · Team Two (lead)</option>' in body
+
+
 def test_task_lifecycle(server):
     m = head(server)
     _, body = m.get("/tasks")

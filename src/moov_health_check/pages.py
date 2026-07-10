@@ -267,8 +267,10 @@ def visible_tasks(tasks: list, user: dict | None) -> list:
 
 def tasks_page(roster: dict, tasks: list, today: str, user: dict | None = None,
                team_filter: str = "", status_filter: str = "",
-               toast: str = "", error: str = "", channels: list | None = None) -> str:
+               toast: str = "", error: str = "", channels: list | None = None,
+               people: list | None = None) -> str:
     channels = channels if channels is not None else []
+    people = people if people is not None else []
     team_names = {tid: info.get("team_name", tid) for tid, info in roster.items()}
     can_manage = bool(user) and user.get("role") == "manager"
     tasks = visible_tasks(tasks, user)
@@ -325,6 +327,13 @@ def tasks_page(roster: dict, tasks: list, today: str, user: dict | None = None,
             f'<option value="{esc(tid)}">{esc(name)}</option>'
             for tid, name in team_names.items()
         ]
+        # Person is a picker of everyone who has registered in reach — as people
+        # join a group they show up here, so the head can pick the team's lead.
+        person_opts = ['<option value="">— anyone in the group —</option>'] + [
+            f'<option value="{esc(p["name"])}">'
+            f'{esc(p["name"])} · {esc(p["group"])} ({esc(p["role"])})</option>'
+            for p in people
+        ]
         addform = f"""<div class="card"><h3>➕ Assign a task <span class="muted">(project name, who, deadline)</span></h3>
 <form method="post" action="/tasks" class="addform">
   <input type="hidden" name="action" value="add">
@@ -333,7 +342,7 @@ def tasks_page(roster: dict, tasks: list, today: str, user: dict | None = None,
   <div class="fld"><label>Assign to group</label>
     <select name="team_id">{''.join(team_opts)}</select></div>
   <div class="fld"><label>Person (optional)</label>
-    <input type="text" name="assignee" placeholder="name"></div>
+    <select name="assignee">{''.join(person_opts)}</select></div>
   <div class="fld"><label>Due date</label>
     <input type="date" name="due_date"></div>
   <button type="submit">Add task</button>
