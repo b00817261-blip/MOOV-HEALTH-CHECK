@@ -34,6 +34,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, quote, quote_plus, unquote, urlparse
 
 from .accounts import AccountStore, normalize_email, valid_email
+from .comments import CommentStore
 from .config import load_metric_definitions
 from .focus import build_focus_items
 from .health import build_report
@@ -62,6 +63,8 @@ class AppState:
         self.org = Org(roster_path, str(Path(reports_dir) / "settings.json"))
         # Email accounts, so people keep their identity across sessions.
         self.accounts = AccountStore(str(Path(reports_dir) / "accounts.json"))
+        # The boss's comments on each group's daily report.
+        self.comments = CommentStore(str(Path(reports_dir) / "comments.json"))
 
     def roster(self) -> dict:
         # The real groups (everything except the synthetic root), keyed by id.
@@ -362,6 +365,7 @@ def completion_stats(state: AppState, day: str, roster: dict | None = None,
                 })
             updater = next((u.get("by") for _, u in todays if u.get("by")), "")
             group_reports.append({
+                "id": tid,
                 "name": info.get("team_name", tid),
                 "lead": updater or info.get("leader", info.get("manager", "")),
                 "done_n": sum(1 for _, u in todays if u.get("status") == "done"),
@@ -482,6 +486,7 @@ def completion_stats(state: AppState, day: str, roster: dict | None = None,
     week_label = f"{ws.day} {ws.strftime('%b')} – {d.day} {d.strftime('%b')}"
     return {
         "requests": requests,
+        "comments": state.comments.for_day(day),
         "span": span,
         "week_label": week_label,
         "day_label": day_label,
@@ -718,9 +723,12 @@ def settings_page(state: AppState, user: dict, toast: str = "") -> str:
                                toast=toast)
 
 
-def me_page(state: AppState, user: dict, day: str, sent: int = 0) -> str:
+def me_page(state: AppState, user: dict, day: str, sent: int = 0,
+            toast: str = "", error: str = "") -> str:
+    boss_comments = state.comments.for_day(day).get(user.get("group_id", ""), [])
     return pages.me_page(user, state.tasks.load(), day,
-                         channels=state.org.channels(), sent=sent)
+                         channels=state.org.channels(), sent=sent,
+                         comments=boss_comments, toast_msg=toast, error=error)
 
 
 def handle_updates(state: AppState, form: dict, user: dict, day: str) -> int:
@@ -817,6 +825,26 @@ def handle_task_action(state: AppState, form: dict, user: dict) -> tuple[bool, s
             verb = "marked done 🎉" if task["status"] == "done" else \
                 f"moved to {task['status'].replace('_', ' ')}"
             return True, f"Task {verb}: {task['title']}"
+        if action == "log":
+            # Someone logs work they did on their own — nobody had to assign
+            # it first. It lands in their group, assigned to them, with
+            # today's update already recorded, so the boss's report picks it
+            # up like any other task.
+            if user.get("is_root"):
+                return False, ("You oversee the whole desk — assign work from "
+                               "the task board instead.")
+            gid = user.get("group_id", "")
+            status = field("status") if field("status") in ("done", "doing") else "done"
+            task = state.tasks.add(
+                title=field("title"), team_id=gid,
+                assignee=user.get("name", ""), created_by=user.get("name", ""))
+            channel_labels = {c["key"]: c["label"] for c in state.org.channels()}
+            state.tasks.record_update(
+                task["id"], _today(), status=status, note=field("note")[:300],
+                channel=channel_labels.get(field("channel"), ""),
+                by=user.get("name", ""))
+            verb = "done 🎉" if status == "done" else "in progress"
+            return True, f"Logged ({verb}): {task['title']}"
         if action == "complete":
             task = state.tasks.get(field("id"))
             if task is None:
@@ -1090,7 +1118,10 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
                 sent = int((qs.get("sent", ["0"])[0] or "0")[:4])
             except ValueError:
                 sent = 0
-            self._send(me_page(self.state, user, day, sent=sent))
+            toast = (qs.get("ok", [""])[0])[:160]
+            error = (qs.get("err", [""])[0])[:160]
+            self._send(me_page(self.state, user, day, sent=sent,
+                               toast=toast, error=error))
         elif path == "/tasks":
             team = (qs.get("team", [""])[0])[:80] if is_leader else ""
             status = (qs.get("status", [""])[0])[:20]
@@ -1129,7 +1160,7 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_POST(self):  # noqa: N802
         path = urlparse(self.path).path
         if path not in ("/updates", "/tasks", "/login", "/join",
-                        "/groups", "/settings", "/restore"):
+                        "/groups", "/settings", "/restore", "/comment"):
             self._send("Not found.", "text/plain; charset=utf-8", 404)
             return
         length = min(int(self.headers.get("Content-Length", 0) or 0), 1_000_000)
@@ -1186,6 +1217,28 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
             if field("action") == "channels":
                 self.state.org.save_channels(form.get("channel", []))
             self._redirect("/settings?ok=" + quote_plus("Settings saved."))
+            return
+
+        if path == "/comment":
+            # A leader comments on a group's daily report; the group sees it
+            # on their My day.
+            if not user["is_leader"]:
+                self._redirect("/me")
+                return
+            gid = field("id")[:80]
+            day = field("day")[:10] or _today()
+            if not _DATE_RE.match(day):
+                day = _today()
+            if not (user.get("is_root") or gid in set(user.get("scope") or [])):
+                self._redirect(f"/?date={day}&err=" + quote_plus(
+                    "That group isn't yours to comment on."))
+                return
+            try:
+                self.state.comments.add(gid, day, user.get("name", ""),
+                                        field("text"))
+                self._redirect(f"/?date={day}&ok=" + quote_plus("Comment posted."))
+            except ValueError as e:
+                self._redirect(f"/?date={day}&err=" + quote_plus(str(e)))
             return
 
         if path == "/tasks":

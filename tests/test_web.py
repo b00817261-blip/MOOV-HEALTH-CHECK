@@ -506,6 +506,60 @@ def test_notifications_tab_flags_requests(server):
     assert 'class="navbadge"' not in nav
 
 
+def test_member_logs_their_own_work(server):
+    # Nobody assigned anything — the member logs what they did themselves,
+    # and it flows into the boss's report like any other task.
+    m = head(server, "Derek")
+    w = member(server, "t1", "Aki")
+    _, body = w.post("/tasks", {"action": "log", "title": "Cleared customs backlog",
+                                "status": "done", "note": "all 14 files closed",
+                                "channel": "email", "back": "me"})
+    assert "Logged" in body                       # toast on My day
+    assert "You completed" in body                # recap picks it up
+    assert "Cleared customs backlog" in body
+
+    task = next(t for t in HealthCheckHandler.state.tasks.load()
+                if t["title"] == "Cleared customs backlog")
+    assert task["assignee"] == "Aki" and task["created_by"] == "Aki"
+    assert task["team_id"] == "t1" and task["status"] == "done"
+
+    _, dash = m.get("/")
+    assert "Cleared customs backlog" in dash and "all 14 files closed" in dash
+    assert "in Email" in dash
+
+    # The head oversees the desk — they assign from the board instead.
+    _, body = m.post("/tasks", {"action": "log", "title": "nope"})
+    assert "assign work from" in body
+
+
+def test_boss_comments_on_the_days_report(server):
+    m = head(server, "Derek")
+    w = member(server, "t1", "Aki")
+    w.post("/tasks", {"action": "log", "title": "Morning gate-in check",
+                      "status": "done", "back": "me"})
+    today = _dt.date.today().isoformat()   # the log lands on the real today
+
+    # The head comments on Team One's report; it shows on the dashboard...
+    _, body = m.post("/comment", {"id": "t1", "day": today,
+                                  "text": "Nice work — chase the carrier tomorrow."})
+    assert "Comment posted" in body
+    _, dash = m.get("/")
+    assert "chase the carrier tomorrow" in dash and "Derek" in dash
+
+    # ...and the group sees it on their My day.
+    _, me = w.get("/me")
+    assert "From the boss" in me and "chase the carrier tomorrow" in me
+
+    # A leader can't comment outside their subtree; members not at all.
+    boss2 = lead(server, "t2", "Lena")
+    _, body = boss2.post("/comment", {"id": "t1", "day": today, "text": "hi"})
+    assert "yours to comment" in body
+    _, body = w.post("/comment", {"id": "t1", "day": today, "text": "hi"})
+    assert "Today's tasks" in body               # bounced to /me
+    stored = HealthCheckHandler.state.comments.for_day(today)["t1"]
+    assert len(stored) == 1                      # only Derek's comment landed
+
+
 def test_task_lifecycle(server):
     m = head(server)
     _, body = m.get("/tasks")

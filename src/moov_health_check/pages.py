@@ -951,7 +951,7 @@ _ME_CSS = """
 .tcard[open] { border-color: #cdd6de; }
 .tbody { padding: 2px 15px 15px; }
 .tbody .q { font-size: 12px; color: var(--muted); margin: 12px 0 6px; font-weight: 600; }
-.optrow input { position: absolute; opacity: 0; pointer-events: none; }
+.optrow input[type=radio] { position: absolute; opacity: 0; pointer-events: none; }
 .optchip { display: inline-block; padding: 7px 14px; margin: 0 6px 6px 0; cursor: pointer;
   border: 1px solid #d5dce2; border-radius: 9px; font-size: 13px; color: var(--ink2); background: #fff; }
 .optchip:hover { border-color: var(--navy); }
@@ -1041,8 +1041,10 @@ def _update_card(t: dict, today: str, open_card: bool, channels: list,
 
 
 def me_page(user: dict, tasks: list, today: str, channels: list | None = None,
-            sent: int = 0) -> str:
+            sent: int = 0, comments: list | None = None,
+            toast_msg: str = "", error: str = "") -> str:
     channels = channels if channels is not None else []
+    comments = comments if comments is not None else []
     allow_link = True  # per-group toggle applies at submit; keep the field visible
     name = user.get("name") or ""
     team_name = user.get("team_name") or user.get("team_id") or "your group"
@@ -1062,6 +1064,10 @@ def me_page(user: dict, tasks: list, today: str, channels: list | None = None,
     if sent:
         toast = (f'<div class="toast">✓ Updates sent — {done_n} of {len(todays)} done. '
                  "Your boss sees them assemble into today's report.</div>")
+    if toast_msg:
+        toast += f'<div class="toast">✓ {esc(toast_msg)}</div>'
+    if error:
+        toast += f'<div class="toast error">⚠ {esc(error)}</div>'
 
     # A recap of what this person has finished today — their own end of the
     # report that assembles itself on the boss's dashboard.
@@ -1110,14 +1116,52 @@ def me_page(user: dict, tasks: list, today: str, channels: list | None = None,
     else:
         form = ('<div class="card" style="text-align:center;padding:40px">'
                 '<h3>Nothing on your plate</h3><div class="sub" style="margin:0">'
-                "No open tasks assigned to you — your board is clear. 🎉</div></div>")
+                "No open tasks assigned to you — log what you did below, or enjoy "
+                "the quiet. 🎉</div></div>")
+
+    # What the boss said about this group's report today.
+    boss_html = ""
+    if comments:
+        lines = "".join(
+            f'<div class="repline">💬 <b>{esc(c.get("by") or "The boss")}</b> — '
+            f'{esc(c.get("text", ""))} '
+            f'<span class="muted" style="font-size:11px">{esc(c.get("at", ""))}</span></div>'
+            for c in comments)
+        boss_html = (f'<div class="card" style="border-left:4px solid var(--navy)">'
+                     f'<h3>💬 From the boss <span class="muted">· on today\'s report</span></h3>'
+                     f'{lines}</div>')
+
+    # Log something nobody assigned — it flows into the boss's report too.
+    chan_opts = "".join(
+        f'<input type="radio" id="lg_ch_{esc(c["key"])}" name="channel" value="{esc(c["key"])}">'
+        f'<label class="optchip" for="lg_ch_{esc(c["key"])}">{esc(c["label"])}</label>'
+        for c in channels)
+    where_q = f'<div class="q">Where\'s it at?</div><div>{chan_opts}</div>' if channels else ""
+    selflog = f"""<div class="card">
+<h3>➕ Log what you did today <span class="muted">· not on the list? add it yourself</span></h3>
+<form method="post" action="/tasks" class="optrow">
+  <input type="hidden" name="action" value="log">
+  <input type="hidden" name="back" value="me">
+  <input type="text" name="title" required placeholder="What did you work on?" style="width:100%">
+  <div class="q">Status</div>
+  <input type="radio" id="lg_done" name="status" value="done" checked>
+  <label class="optchip good" for="lg_done">✓ Done</label>
+  <input type="radio" id="lg_doing" name="status" value="doing">
+  <label class="optchip" for="lg_doing">In progress</label>
+  {where_q}
+  <input type="text" name="note" placeholder="A word for the boss (optional)"
+    style="width:100%;margin-top:8px">
+  <button type="submit" style="margin-top:10px">Log it</button>
+</form></div>"""
 
     hello = esc(name) if name else esc(team_name)
     body = f"""<h1>Today's tasks</h1>
 <div class="sub">{frm}{len(todays)} task(s) · update each one — takes about a minute, {hello}.</div>
 {toast}
+{boss_html}
 {recap}
-{form}"""
+{form}
+{selflog}"""
     return shell("My day", "me", today, body, extra_css=_ME_CSS + _REPORT_CSS, user=user)
 
 
@@ -1230,8 +1274,14 @@ def _metric(icon: str, num, label: str) -> str:
             f'<div><div class="m-num">{num}</div><div class="m-lbl">{esc(label)}</div></div></div>')
 
 
-def group_report_cards(group_reports: list, silent: list) -> str:
-    """The manager's report, assembled from the groups' task updates."""
+def group_report_cards(group_reports: list, silent: list,
+                       comments: dict | None = None, day: str = "",
+                       can_comment: bool = False) -> str:
+    """The manager's report, assembled from the groups' task updates.
+
+    ``comments`` maps group id -> the boss's comments for ``day``; when
+    ``can_comment`` the viewer gets a small comment box per group card."""
+    comments = comments or {}
     out = []
     for g in group_reports:
         counts = []
@@ -1266,6 +1316,21 @@ def group_report_cards(group_reports: list, silent: list) -> str:
                 chips += (f'<span class="rep-chip" style="border-color:#d99513;'
                           f'color:#d99513">⚠ {fr}</span>')
             out.append(f'<div class="repline">{icon} <b>{esc(it["title"])}</b>{note}{chips}</div>')
+        for c in comments.get(g.get("id", ""), []):
+            out.append(
+                f'<div class="repline" style="background:#eaf0f6;border-radius:8px;'
+                f'padding:9px 10px;border-bottom:0;margin-top:6px">💬 '
+                f'<b>{esc(c.get("by") or "The boss")}</b> — {esc(c.get("text", ""))} '
+                f'<span class="muted" style="font-size:11px">{esc(c.get("at", ""))}</span></div>')
+        if can_comment and day:
+            out.append(
+                f'<form method="post" action="/comment" style="display:flex;gap:8px;'
+                f'margin:8px 0 2px;align-items:center">'
+                f'<input type="hidden" name="id" value="{esc(g.get("id", ""))}">'
+                f'<input type="hidden" name="day" value="{esc(day)}">'
+                f'<input type="text" name="text" placeholder="Comment on this report…" '
+                f'style="flex:1;font-size:13px" maxlength="500" required>'
+                f'<button type="submit" class="ghost">💬 Comment</button></form>')
     if silent:
         out.append(f'<div class="muted" style="margin-top:12px;font-size:13px">'
                    f'⚠ No updates yet from: {esc(", ".join(silent))}</div>')
@@ -1507,7 +1572,8 @@ def completion_dashboard(stats: dict, day: str, user: dict | None = None,
 {team_table}
 <div class="grid2">
 <div class="card"><h3>{"This week's report" if is_week else "Today's report"} <span class="muted">· assembles itself from the groups' updates</span></h3>
-{group_report_cards(stats["group_reports"], stats["silent_groups"])}
+{group_report_cards(stats["group_reports"], stats["silent_groups"],
+                    comments=stats.get("comments"), day=day, can_comment=True)}
 </div>
 <div class="card"><h3>Daily checklist · groups</h3><ul class="checklist">{''.join(checklist)}</ul></div>
 </div>
