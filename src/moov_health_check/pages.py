@@ -64,16 +64,51 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var
 .eyebrow { font-size: 12px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; color: var(--orange); }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
   clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
-/* Top nav — clean white bar */
-.topnav { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin: 0 0 24px;
-  font-size: 14px; background: var(--card); border: 1px solid var(--line); border-radius: 14px;
-  padding: 8px 12px; box-shadow: 0 1px 2px rgba(16,49,79,.05); }
-.topnav a { padding: 7px 12px; border-radius: 9px; color: var(--ink2); font-weight: 500; }
-.topnav a:hover { background: #f1f4f7; color: var(--ink); }
-.topnav a.active { color: var(--navy); font-weight: 700; background: #eaf0f6; }
+/* App shell — left sidebar + main content */
+.app { display: flex; min-height: 100vh; align-items: stretch; }
+.sidebar { width: 244px; flex: none; background: var(--card); border-right: 1px solid var(--line);
+  display: flex; flex-direction: column; padding: 20px 14px 16px; position: sticky; top: 0;
+  height: 100vh; overflow-y: auto; }
+.main { flex: 1; min-width: 0; }
+.mainwrap { max-width: 1120px; margin: 0 auto; padding: 30px 34px 64px; }
+.brand-row { display: flex; align-items: center; gap: 11px; padding: 4px 10px 18px; }
+.brand-mark { display: inline-flex; }
+.brand-mark svg { width: 34px; height: 34px; }
+.brand-name { font-weight: 800; font-size: 21px; letter-spacing: -.4px; color: var(--navy); line-height: 1.1; }
+.brand-sub { font-size: 12px; color: var(--muted); }
+.snav { display: flex; flex-direction: column; gap: 3px; }
+.snav-link { display: flex; align-items: center; gap: 11px; padding: 10px 12px; border-radius: 11px;
+  color: var(--ink2); font-weight: 600; font-size: 14px; }
+.snav-link:hover { background: #f1f4f7; color: var(--ink); }
+.snav-link.active { background: var(--navy); color: #fff; }
+.snav-link .ico { width: 20px; text-align: center; flex: none; }
+.snav-link .lbl { flex: 1; min-width: 0; }
+.snav-link .chev { opacity: 0; font-size: 17px; }
+.snav-link.active .chev { opacity: 1; }
+.side-spacer { flex: 1; min-height: 20px; }
+.userchip { display: flex; align-items: center; gap: 10px; padding: 12px 8px 10px;
+  border-top: 1px solid var(--line); }
+.uc-avatar { width: 36px; height: 36px; border-radius: 50%; background: var(--navy); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 13px; flex: none; }
+.uc-name { font-weight: 700; color: var(--ink); font-size: 14px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+.uc-role { font-size: 12px; color: var(--muted); }
+.signout-btn { display: block; text-align: center; margin-top: 8px; padding: 9px; border-radius: 10px;
+  border: 1px solid #d5dce2; color: var(--ink2); font-weight: 600; font-size: 13px; }
+.signout-btn:hover { border-color: var(--navy); color: var(--navy); }
 .navbadge { display: inline-block; min-width: 18px; height: 18px; padding: 0 5px;
-  margin-left: 5px; border-radius: 10px; background: var(--orange); color: #fff;
-  font-size: 11px; font-weight: 800; line-height: 18px; text-align: center; vertical-align: 1px; }
+  border-radius: 10px; background: var(--orange); color: #fff;
+  font-size: 11px; font-weight: 800; line-height: 18px; text-align: center; }
+.snav-link.active .navbadge { background: #fff; color: var(--navy); }
+@media (max-width: 800px) {
+  .app { flex-direction: column; }
+  .sidebar { width: auto; height: auto; position: static; border-right: 0;
+    border-bottom: 1px solid var(--line); }
+  .snav { flex-direction: row; flex-wrap: wrap; }
+  .snav-link .chev { display: none; }
+  .side-spacer { display: none; }
+  .mainwrap { padding: 22px 18px 56px; }
+}
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px;
   margin-bottom: 16px; box-shadow: 0 1px 2px rgba(16,49,79,.05); }
 .grid2 { display: grid; grid-template-columns: 1.5fr 1fr; gap: 16px; }
@@ -157,67 +192,75 @@ footer { margin-top: 40px; color: var(--muted); font-size: 12px; text-align: cen
 """
 
 
-def nav(active: str, day: str, user: dict | None = None) -> str:
+def sidebar(active: str, day: str, user: dict) -> str:
+    """The left navigation rail for a signed-in person."""
     d = esc(day)
     month = esc(day[:7])
-    if user and user.get("is_leader"):
+    if user.get("is_leader"):
         n = user.get("notif_count") or 0
         badge = f'<span class="navbadge">{n}</span>' if n else ""
         links = [
-            ("dashboard", f"/?date={d}", "📊 Dashboard"),
-            ("tasks", "/tasks", "✅ Tasks"),
-            ("notifications", "/notifications", f"🔔 Notifications{badge}"),
-            ("calendar", f"/calendar?month={month}", "🗓 Calendar"),
-            ("groups", "/groups", "👥 Groups & invites"),
-            ("settings", "/settings", "⚙️ Settings"),
+            ("dashboard", f"/?date={d}", "📊", "Dashboard", ""),
+            ("tasks", "/tasks", "✅", "Tasks", ""),
+            ("notifications", "/notifications", "🔔", "Notifications", badge),
+            ("calendar", f"/calendar?month={month}", "🗓", "Calendar", ""),
+            ("groups", "/groups", "👥", "Groups & invites", ""),
+            ("settings", "/settings", "⚙️", "Settings", ""),
         ]
-        name = user.get("name") or ""
-        title = "Head" if user.get("is_root") else "Lead · " + esc(user.get("group_name", ""))
-        who = f"{title} · {esc(name)}" if name else title
-        chip = f'<span class="role-chip manager" style="margin-left:auto">{who}</span>'
-    elif user:
-        links = [
-            ("me", "/me", "🏠 My day"),
-            ("tasks", "/tasks", "✅ My tasks"),
-            ("calendar", f"/calendar?month={month}", "🗓 Calendar"),
-        ]
-        name = user.get("name") or ""
-        who = f"{esc(name)} · {esc(user.get('group_name', ''))}" if name \
-            else esc(user.get("group_name", "Team"))
-        chip = f'<span class="role-chip worker" style="margin-left:auto">{who}</span>'
+        role = "Head of the desk" if user.get("is_root") \
+            else "Lead · " + esc(user.get("group_name", ""))
     else:
-        return ""
-    primary = ""
-    out = ['<nav class="topnav">']
-    for key, href, label in links:
-        cls = ' class="active"' if key == active else ""
-        out.append(f'<a href="{href}"{cls}>{label}</a>')
-    out.append(primary)
-    out.append(chip)
-    out.append('<a class="signout" href="/logout">Sign out</a>')
-    out.append("</nav>")
-    return "".join(out)
+        links = [
+            ("me", "/me", "🏠", "My day", ""),
+            ("tasks", "/tasks", "✅", "My tasks", ""),
+            ("calendar", f"/calendar?month={month}", "🗓", "Calendar", ""),
+        ]
+        role = esc(user.get("group_name", "")) or "Member"
+
+    items = []
+    for key, href, icon, label, badge in links:
+        cls = " active" if key == active else ""
+        items.append(
+            f'<a class="snav-link{cls}" href="{href}">'
+            f'<span class="ico">{icon}</span><span class="lbl">{label}</span>'
+            f'{badge}<span class="chev">›</span></a>')
+
+    name = user.get("name") or ""
+    initials = esc(_initials(name or user.get("group_name", "")))
+    who = esc(name) if name else esc(user.get("group_name", "Team"))
+    return f"""<div class="brand-row">
+  <span class="brand-mark">{_MOOV_MARK}</span>
+  <div><div class="brand-name">MOOV</div><div class="brand-sub">Health Check</div></div>
+</div>
+<nav class="snav">{''.join(items)}</nav>
+<div class="side-spacer"></div>
+<div class="userchip">
+  <span class="uc-avatar">{initials}</span>
+  <div style="min-width:0"><div class="uc-name">{who}</div><div class="uc-role">{role}</div></div>
+</div>
+<a class="signout-btn" href="/logout">↪ Sign out</a>"""
 
 
 def shell(title: str, active: str, day: str, body: str, extra_css: str = "",
           user: dict | None = None) -> str:
-    if user and user.get("is_leader"):
-        body_cls = ' class="role-manager"'
-    elif user:
-        body_cls = ' class="role-worker"'
+    if user:
+        body_cls = ' class="role-manager"' if user.get("is_leader") else ' class="role-worker"'
+        layout = (f'<div class="app"><aside class="sidebar">{sidebar(active, day, user)}'
+                  f'</aside><main class="main"><div class="mainwrap">{body}'
+                  f'<footer>MOOV Health Check · zero-dependency daily operations website</footer>'
+                  f'</div></main></div>')
     else:
         body_cls = ""
+        layout = (f'<div class="wrap">{body}'
+                  f'<footer>MOOV Health Check · zero-dependency daily operations website</footer>'
+                  f'</div>')
     return f"""<!DOCTYPE html>
 <html lang="en"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{esc(title)} — MOOV</title>
 <style>{BASE_CSS}{extra_css}</style></head>
-<body{body_cls}><div class="wrap">
-{nav(active, day, user)}
-{body}
-<footer>MOOV Health Check · zero-dependency daily operations website</footer>
-</div></body></html>"""
+<body{body_cls}>{layout}</body></html>"""
 
 
 def status_chip(status: str) -> str:
