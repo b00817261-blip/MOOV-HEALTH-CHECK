@@ -151,18 +151,6 @@ button.danger:hover { border-color: var(--red); }
 .addform .fld { display: flex; flex-direction: column; gap: 4px; }
 .addform label { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); font-weight: 700; }
 .rowform { display: inline-flex; gap: 6px; align-items: center; }
-/* Calendar */
-.cal { width: 100%; table-layout: fixed; }
-.cal th { text-align: center; padding: 6px 4px; }
-.cal td { height: 96px; vertical-align: top; padding: 6px; border: 1px solid var(--line); }
-.cal .daynum { font-size: 12px; font-weight: 700; color: var(--muted); display: inline-block; margin-bottom: 4px; }
-.cal td.today { outline: 2px solid var(--navy); outline-offset: -2px; border-radius: 4px; }
-.cal td.today .daynum { color: var(--navy); }
-.cal td.other { background: #f4f6f8; }
-.cal .ev { display: block; font-size: 11px; line-height: 1.3; border-left: 3px solid; border-radius: 3px;
-  background: #f1f4f7; padding: 1px 5px; margin: 2px 0; white-space: nowrap; overflow: hidden;
-  text-overflow: ellipsis; color: var(--ink2); }
-.cal .rep { display: inline-block; font-size: 11px; color: var(--green); margin-top: 2px; }
 footer { margin-top: 40px; color: var(--muted); font-size: 12px; text-align: center; }
 /* Role identity chip */
 .role-chip { font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
@@ -584,17 +572,59 @@ def report_dates(reports_dir: str) -> dict:
     return out
 
 
+_CAL_CSS = """
+.cal-head { display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 14px; flex-wrap: wrap; }
+.cal-nav { display: flex; gap: 8px; align-items: center; padding-bottom: 6px; }
+.cal-nav a { padding: 8px 15px; border-radius: 10px; font-size: 13px; font-weight: 700;
+  background: #fff; border: 1px solid #d5dce2; color: var(--ink2); }
+.cal-nav a:hover { border-color: var(--navy); color: var(--navy); }
+.cal-nav a.now { background: var(--navy); border-color: var(--navy); color: #fff; }
+.cal-info { display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  margin: 2px 2px 14px; font-size: 13px; color: var(--ink2); }
+.cal-info .cdot { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--navy); margin-right: 7px; vertical-align: middle; }
+.cal-legend { margin-left: auto; display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px;
+  color: var(--muted); font-weight: 600; }
+.cal-legend .ld { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  margin-right: 5px; vertical-align: middle; }
+.cal { width: 100%; table-layout: fixed; border-collapse: collapse; }
+.cal th { background: var(--navy); color: #fff; text-align: left; padding: 11px 12px;
+  font-size: 11px; letter-spacing: 1px; text-transform: uppercase; border: 0; }
+.cal th:first-child { border-radius: 10px 0 0 0; }
+.cal th:last-child { border-radius: 0 10px 0 0; }
+.cal td { height: 104px; vertical-align: top; padding: 8px 7px; border: 1px solid var(--line);
+  background: #fff; }
+.cal td.other { background: #f4f6f8; }
+.cal td.other .daynum { color: #b3bec7; }
+.cal td.today { outline: 2px solid var(--navy); outline-offset: -2px; }
+.cal .dayrow { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; }
+.cal .daynum { font-size: 14px; font-weight: 800; color: var(--ink); }
+.cal .today-badge { background: var(--navy); color: #fff; font-size: 9px; font-weight: 800;
+  letter-spacing: .8px; padding: 2px 8px; border-radius: 8px; }
+.cal .evp { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600;
+  padding: 3px 8px; border-radius: 7px; margin: 3px 0; color: var(--ink2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cal .evp .ed { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.cal .evp span { overflow: hidden; text-overflow: ellipsis; }
+.cal .more { font-size: 11px; color: var(--muted); font-weight: 600; padding: 1px 4px; }
+.cal .rep { display: inline-block; font-size: 11px; color: var(--green); margin-top: 2px; }
+"""
+
+
 def calendar_page(roster: dict, tasks: list, reports_by_day: dict,
                   month: str, today: str, user: dict | None = None) -> str:
     team_names = {tid: info.get("team_name", tid) for tid, info in roster.items()}
     tasks = visible_tasks(tasks, user)
     year, mon = int(month[:4]), int(month[5:7])
     month_name = f"{calendar_mod.month_name[mon]} {year}"
+    is_manager = (user or {}).get("role") != "worker"
 
     by_due: dict = {}
     for t in tasks:
         if t.get("due_date"):
             by_due.setdefault(t["due_date"], []).append(t)
+    month_deadlines = sum(len(v) for k, v in by_due.items() if k[:7] == month)
 
     weeks = calendar_mod.Calendar(firstweekday=0).monthdatescalendar(year, mon)
     head = "".join(f"<th>{d}</th>" for d in ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"))
@@ -609,48 +639,65 @@ def calendar_page(roster: dict, tasks: list, reports_by_day: dict,
             if iso == today:
                 classes.append("today")
             cls = f' class="{" ".join(classes)}"' if classes else ""
+            day_tasks = sorted(by_due.get(iso, []),
+                               key=lambda t: t.get("status", ""))
             events = []
-            for t in sorted(by_due.get(iso, []), key=lambda t: t.get("status", "")):
+            for t in day_tasks[:3]:
                 color = STATUS_COLORS.get(t.get("status", "todo"), "#8a8f98")
                 owner = team_names.get(t.get("team_id", ""), t.get("assignee", ""))
                 tip = t.get("title", "") + (f" — {owner}" if owner else "")
-                strike = "text-decoration:line-through;opacity:.6;" if t.get("status") in ("done", "canceled") else ""
                 events.append(
-                    f'<a class="ev" href="/tasks" style="border-left-color:{color};{strike}" '
-                    f'title="{esc(tip)}">{esc(t.get("title", ""))}</a>'
+                    f'<a class="evp" href="/tasks" style="background:{color}14" '
+                    f'title="{esc(tip)}"><span class="ed" style="background:{color}">'
+                    f'</span><span>{esc(t.get("title", ""))}</span></a>'
                 )
+            if len(day_tasks) > 3:
+                events.append(f'<div class="more">+{len(day_tasks) - 3} more</div>')
             n_reports = reports_by_day.get(iso, 0)
-            is_manager = (user or {}).get("role") != "worker"
-            if is_manager:
-                rep = (f'<a class="rep" href="/?date={iso}" title="{n_reports} team report(s) filed">'
-                       f'📋 {n_reports}</a>') if n_reports else ""
-                daynum = f'<a class="daynum" href="/?date={iso}">{d.day}</a>'
-            else:
-                rep = (f'<span class="rep" title="{n_reports} team report(s) filed">'
-                       f'📋 {n_reports}</span>') if n_reports else ""
-                daynum = f'<span class="daynum">{d.day}</span>'
-            cells.append(f'<td{cls}>{daynum}{"".join(events)}{rep}</td>')
+            rep = ""
+            if n_reports:
+                rep_body = f'📋 {n_reports}'
+                rep = (f'<a class="rep" href="/?date={iso}" title="{n_reports} team '
+                       f'report(s) filed">{rep_body}</a>' if is_manager else
+                       f'<span class="rep" title="{n_reports} team report(s) filed">'
+                       f'{rep_body}</span>')
+            badge = '<span class="today-badge">Today</span>' if iso == today else ""
+            daynum = (f'<a class="daynum" href="/?date={iso}">{d.day}</a>'
+                      if is_manager else f'<span class="daynum">{d.day}</span>')
+            cells.append(f'<td{cls}><div class="dayrow">{daynum}{badge}</div>'
+                         f'{"".join(events)}{rep}</td>')
         body_rows.append(f"<tr>{''.join(cells)}</tr>")
 
-    legend = " ".join(
-        f'<span class="chip" style="border-color:{c};color:{c}">{esc(tasks_mod.STATUSES[k])}</span>'
+    legend = "".join(
+        f'<span><span class="ld" style="background:{c}"></span>{esc(tasks_mod.STATUSES[k])}</span>'
         for k, c in STATUS_COLORS.items()
     )
-    hint = ("Click a day to open its dashboard."
-            if (user or {}).get("role") != "worker"
+    hint = ("Click a day to open its dashboard." if is_manager
             else "Your deadlines and the days your team reported.")
-    body = f"""<h1>🗓 {esc(month_name)}</h1>
-<div class="sub">Task deadlines and filed daily reports, at a glance. {hint}</div>
-<div class="filters">
-  <a href="/calendar?month={_month_shift(month, -1)}">← {_month_shift(month, -1)}</a>
-  <a href="/calendar?month={esc(today[:7])}">Today</a>
-  <a href="/calendar?month={_month_shift(month, 1)}">{_month_shift(month, 1)} →</a>
-  <span style="margin-left:auto">{legend}</span>
+    unit = "deadline" if month_deadlines == 1 else "deadlines"
+    rule = ('<div style="width:70px;height:3px;border-radius:3px;margin:14px 0 18px;'
+            'background:linear-gradient(90deg,var(--navy),var(--orange))"></div>')
+    body = f"""<div class="cal-head">
+  <div>
+    <div class="eyebrow">Calendar</div>
+    <h1 style="margin-top:2px">🗓 {esc(month_name)}</h1>
+    <div class="sub" style="margin-bottom:0">Task deadlines and filed daily reports, at a glance. {hint}</div>
+    {rule}
+  </div>
+  <div class="cal-nav">
+    <a href="/calendar?month={_month_shift(month, -1)}">← {_month_shift(month, -1)}</a>
+    <a class="now" href="/calendar?month={esc(today[:7])}">Today</a>
+    <a href="/calendar?month={_month_shift(month, 1)}">{_month_shift(month, 1)} →</a>
+  </div>
 </div>
-<div class="card" style="padding:8px">
+<div class="cal-info"><span><span class="cdot"></span>{month_deadlines} task {unit} this month
+  · {hint[0].lower() + hint[1:]}</span>
+  <span class="cal-legend">{legend}</span></div>
+<div class="card" style="padding:10px">
 <table class="cal"><thead><tr>{head}</tr></thead><tbody>{''.join(body_rows)}</tbody></table>
 </div>"""
-    return shell(f"Calendar — {month_name}", "calendar", today, body, user=user)
+    return shell(f"Calendar — {month_name}", "calendar", today, body,
+                 extra_css=_CAL_CSS, user=user)
 
 
 # ---------------------------------------------------------------------------
@@ -1380,24 +1427,55 @@ def completion_dashboard(stats: dict, day: str, user: dict | None = None,
 # ---------------------------------------------------------------------------
 
 _GROUPS_CSS = """
-.gnode { border: 1px solid var(--line); border-radius: 14px; background: #fff;
-  padding: 15px 17px; margin-bottom: 10px; box-shadow: 0 1px 2px rgba(16,49,79,.05); }
-.gnode .ghead { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.gnode .gname { font-weight: 800; color: var(--ink); }
+.gnode { position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: 16px;
+  background: #fff; padding: 18px 20px; margin-bottom: 14px; box-shadow: 0 1px 2px rgba(16,49,79,.05); }
+.gnode.top { padding-top: 21px; }
+.gnode.top::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 4px;
+  background: linear-gradient(90deg, var(--navy), var(--orange)); }
+.gnode .ghead { display: flex; align-items: center; gap: 11px; flex-wrap: wrap; margin-bottom: 10px; }
+.gnode .gavatar { width: 34px; height: 34px; border-radius: 50%; background: #eaf0f6;
+  color: var(--navy); display: flex; align-items: center; justify-content: center;
+  font-weight: 800; font-size: 14px; flex: none; }
+.gnode .gname { font-weight: 800; font-size: 17px; color: var(--ink); }
 .gnode .glead { color: var(--muted); font-size: 13px; }
+.gnode .gcount { margin-left: auto; background: #eef1f4; color: var(--ink2); border-radius: 20px;
+  padding: 4px 12px; font-size: 11px; font-weight: 800; letter-spacing: .8px; text-transform: uppercase; }
 .invite { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
-.invite .lbl { font-size: 12px; color: var(--muted); min-width: 92px; }
-.invite input { flex: 1; min-width: 220px; font-size: 12px; color: var(--navy); }
-.gactions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.invite .lbl { font-size: 13px; color: var(--navy); font-weight: 700; min-width: 92px; }
+.invite input { flex: 1; min-width: 220px; font-size: 12px; color: var(--ink2);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: #f6f8fa; border-color: var(--line); }
+.gactions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
 .gactions form { display: inline-flex; gap: 6px; align-items: center; }
-.addperson { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
-.addperson .lbl { font-size: 12px; color: var(--muted); min-width: 92px; }
+.addperson { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+.addperson .lbl { font-size: 13px; color: var(--ink2); font-weight: 600; min-width: 92px; }
 .addperson input[type=email] { flex: 1; min-width: 200px; font-size: 13px; }
-.addsub { margin-top: 10px; padding-top: 10px; border-top: 1px dashed #d5dce2; }
+.addsub { margin-top: 12px; padding-top: 12px; border-top: 1px dashed #d5dce2; }
+details.subrow { margin-top: 10px; border: 1px solid var(--line); border-radius: 11px;
+  background: #f8fafb; }
+details.subrow summary { list-style: none; cursor: pointer; display: flex; align-items: center;
+  gap: 9px; padding: 11px 14px; font-size: 14px; }
+details.subrow summary::-webkit-details-marker { display: none; }
+details.subrow summary .sdot { width: 8px; height: 8px; border-radius: 50%; background: var(--navy); flex: none; }
+details.subrow summary b { color: var(--ink); }
+details.subrow summary .glead { font-size: 13px; }
+details.subrow summary .shint { margin-left: auto; font-size: 12px; color: var(--muted); font-weight: 600; }
+details.subrow[open] summary .shint .cl { display: inline; }
+details.subrow .subbody { padding: 0 10px 10px; }
 """
 
 
-def _group_node_html(org, gid: str, base_url: str, depth: int = 0) -> str:
+def _copy_btn() -> str:
+    # Tiny inline handler: select + copy the link field just before this button.
+    return ('<button type="button" class="ghost" onclick="var b=this,'
+            "i=b.previousElementSibling;i.select();"
+            "try{navigator.clipboard.writeText(i.value)}catch(e){document.execCommand('copy')};"
+            "b.textContent='Copied ✓';setTimeout(function(){b.textContent='Copy'},1200)\">"
+            'Copy</button>')
+
+
+def _group_node_html(org, gid: str, base_url: str, counts: dict,
+                     depth: int = 0) -> str:
     g = org.get(gid)
     if g is None:
         return ""
@@ -1407,12 +1485,14 @@ def _group_node_html(org, gid: str, base_url: str, depth: int = 0) -> str:
         else '<span class="glead">· no lead yet — share the leader link</span>'
     tokens = g.get("tokens") or {}
     allow = g.get("allow_link", True)
+    n = counts.get(gid, 0)
+    count_chip = f'<span class="gcount">{n} member{"s" if n != 1 else ""}</span>'
 
     def invite_row(role, label):
         tok = tokens.get(role, "")
         link = f"{base_url}/join?link={tok}" if tok else ""
         field = (f'<input type="text" readonly onclick="this.select()" '
-                 f'value="{esc(link)}">' if tok else
+                 f'value="{esc(link)}">{_copy_btn()}' if tok else
                  '<span class="muted" style="font-size:12px">not generated</span>')
         btn = (f'<form method="post" action="/groups"><input type="hidden" name="action" '
                f'value="reinvite"><input type="hidden" name="id" value="{esc(gid)}">'
@@ -1445,7 +1525,7 @@ def _group_node_html(org, gid: str, base_url: str, depth: int = 0) -> str:
         f'<input type="hidden" name="action" value="toggle_link">'
         f'<input type="hidden" name="id" value="{esc(gid)}">'
         f'<button type="submit" class="ghost">'
-        f'{"🔗 Attachments: on" if allow else "🔗 Attachments: off"}</button></form>'
+        f'{"● Attachments: on" if allow else "○ Attachments: off"}</button></form>'
     )
     addsub = (
         f'<div class="addsub"><form method="post" action="/groups" class="addform">'
@@ -1458,13 +1538,26 @@ def _group_node_html(org, gid: str, base_url: str, depth: int = 0) -> str:
         f'<button type="submit">Add sub-group</button></form></div>'
     )
 
-    inner = "".join(_group_node_html(org, c["team_id"], base_url, depth + 1)
-                    for c in org.children(gid))
-    inner_html = f'<div style="margin-left:22px;margin-top:10px">{inner}</div>' if inner else ""
-    return (f'<div class="gnode">'
-            f'<div class="ghead"><span class="gname">{name}</span>{lead_html}</div>'
-            f'{invites}{add_person}<div class="gactions">{actions}</div>{addsub}'
-            f'{inner_html}</div>')
+    # Sub-groups fold away as compact rows; open one to manage it in full.
+    inner = []
+    for c in org.children(gid):
+        cg = org.get(c["team_id"]) or {}
+        clead = cg.get("leader", "")
+        clead_html = (f'<span class="glead">led by {esc(clead)}</span>' if clead
+                      else '<span class="glead">no lead yet</span>')
+        inner.append(
+            f'<details class="subrow"><summary><span class="sdot"></span>'
+            f'<b>{esc(cg.get("team_name", c["team_id"]))}</b>{clead_html}'
+            f'<span class="shint">manage ▾</span></summary>'
+            f'<div class="subbody">'
+            f'{_group_node_html(org, c["team_id"], base_url, counts, depth + 1)}'
+            f'</div></details>')
+    top_cls = " top" if depth == 0 else ""
+    return (f'<div class="gnode{top_cls}">'
+            f'<div class="ghead"><span class="gavatar">{esc(_initials(name))}</span>'
+            f'<span class="gname">{name}</span>{lead_html}{count_chip}</div>'
+            f'{invites}{add_person}<div class="gactions">{actions}</div>'
+            f'{"".join(inner)}{addsub}</div>')
 
 
 def groups_page(state, user: dict, toast: str = "", error: str = "",
@@ -1478,20 +1571,36 @@ def groups_page(state, user: dict, toast: str = "", error: str = "",
     if error:
         toast_html = f'<div class="toast error">⚠ {esc(error)}</div>'
 
+    # Registered people per group's whole subtree — the "N members" chip.
+    groups = org.groups()
+    direct: dict = {}
+    for p in state.accounts.people():
+        pgid = p.get("group_id")
+        if pgid and pgid != ROOT_ID:
+            direct[pgid] = direct.get(pgid, 0) + 1
+    counts = {gid: sum(direct.get(sub, 0)
+                       for sub in org.subtree_ids(gid, groups))
+              for gid in groups if gid != ROOT_ID}
+
     # The children of the person's own node are the groups they manage.
     children = org.children(root)
     if children:
-        tree = "".join(_group_node_html(org, c["team_id"], base_url) for c in children)
+        tree = "".join(_group_node_html(org, c["team_id"], base_url, counts)
+                       for c in children)
     else:
         tree = ('<div class="card" style="text-align:center;padding:32px">'
                 '<div class="sub" style="margin:0">No groups yet. Add your first one '
                 "below, then share its invite link with whoever leads it.</div></div>")
 
     where = "your desk" if user.get("is_root") else f'“{esc(user.get("group_name",""))}”'
-    body = f"""<h1>👥 Groups &amp; invites</h1>
-<div class="sub">Build out {where}: add a group, share its <b>leader</b> or
+    rule = ('<div style="width:70px;height:3px;border-radius:3px;margin:14px 0 22px;'
+            'background:linear-gradient(90deg,var(--navy),var(--orange))"></div>')
+    body = f"""<div class="eyebrow">Your desk</div>
+<h1 style="margin-top:2px">👥 Groups &amp; invites</h1>
+<div class="sub" style="margin-bottom:0">Build out {where}: add a group, share its <b>leader</b> or
 <b>member</b> link, and whoever opens it joins that exact group. Leaders can then
 nest their own sub-groups — as deep as you like.</div>
+{rule}
 {toast_html}
 <div class="card"><h3>➕ Add a group under {where}</h3>
 <form method="post" action="/groups" class="addform">
