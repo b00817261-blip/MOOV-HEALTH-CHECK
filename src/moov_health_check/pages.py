@@ -71,31 +71,32 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var
   height: 100vh; overflow-y: auto; }
 .main { flex: 1; min-width: 0; }
 .mainwrap { max-width: 1120px; margin: 0 auto; padding: 30px 34px 64px; }
-.brand-row { display: flex; align-items: center; gap: 11px; padding: 4px 10px 18px; }
-.brand-mark { display: inline-flex; }
-.brand-mark svg { width: 34px; height: 34px; }
-.brand-name { font-weight: 800; font-size: 21px; letter-spacing: -.4px; color: var(--navy); line-height: 1.1; }
-.brand-sub { font-size: 12px; color: var(--muted); }
+.brand-row { display: flex; align-items: center; gap: 13px; padding: 6px 8px 15px; }
+.brand-badge { width: 52px; height: 38px; border-radius: 9px; background: var(--navy);
+  display: flex; align-items: center; justify-content: center; flex: none;
+  box-shadow: 0 3px 8px rgba(16,49,79,.22); }
+.brand-badge svg { width: 34px; height: 30px; }
+.brand-title { font-size: 13px; font-weight: 800; letter-spacing: 2.4px; color: var(--ink2);
+  text-transform: uppercase; line-height: 1.4; }
+.side-rule { height: 3px; border-radius: 3px; margin: 0 8px 18px;
+  background: linear-gradient(90deg, var(--navy), var(--orange)); }
 .snav { display: flex; flex-direction: column; gap: 3px; }
-.snav-link { display: flex; align-items: center; gap: 11px; padding: 10px 12px; border-radius: 11px;
-  color: var(--ink2); font-weight: 600; font-size: 14px; }
+.snav-link { display: flex; align-items: center; gap: 12px; padding: 10px 13px; border-radius: 20px;
+  color: var(--ink2); font-weight: 700; font-size: 14px; }
 .snav-link:hover { background: #f1f4f7; color: var(--ink); }
 .snav-link.active { background: var(--navy); color: #fff; }
-.snav-link .ico { width: 20px; text-align: center; flex: none; }
+.snav-link .nico { width: 18px; height: 18px; flex: none; }
 .snav-link .lbl { flex: 1; min-width: 0; }
 .snav-link .chev { opacity: 0; font-size: 17px; }
 .snav-link.active .chev { opacity: 1; }
 .side-spacer { flex: 1; min-height: 20px; }
-.userchip { display: flex; align-items: center; gap: 10px; padding: 12px 8px 10px;
-  border-top: 1px solid var(--line); }
-.uc-avatar { width: 36px; height: 36px; border-radius: 50%; background: var(--navy); color: #fff;
-  display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 13px; flex: none; }
-.uc-name { font-weight: 700; color: var(--ink); font-size: 14px; white-space: nowrap;
-  overflow: hidden; text-overflow: ellipsis; }
-.uc-role { font-size: 12px; color: var(--muted); }
-.signout-btn { display: block; text-align: center; margin-top: 8px; padding: 9px; border-radius: 10px;
-  border: 1px solid #d5dce2; color: var(--ink2); font-weight: 600; font-size: 13px; }
-.signout-btn:hover { border-color: var(--navy); color: var(--navy); }
+.role-pill { display: block; background: var(--navy); color: #fff; border-radius: 20px;
+  padding: 9px 16px; font-size: 11px; font-weight: 800; letter-spacing: 1.2px;
+  text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.role-pill.worker { background: var(--green); }
+.signout-link { display: block; padding: 12px 8px 2px; color: var(--muted);
+  font-size: 13px; font-weight: 600; }
+.signout-link:hover { color: var(--navy); }
 .navbadge { display: inline-block; min-width: 18px; height: 18px; padding: 0 5px;
   border-radius: 10px; background: var(--orange); color: #fff;
   font-size: 11px; font-weight: 800; line-height: 18px; text-align: center; }
@@ -180,53 +181,91 @@ footer { margin-top: 40px; color: var(--muted); font-size: 12px; text-align: cen
 """
 
 
+# Line icons for the sidebar (Feather-style strokes, inherit currentColor).
+_NAV_ICONS = {
+    "grid": '<rect x="3" y="3" width="7" height="7" rx="1"/>'
+            '<rect x="14" y="3" width="7" height="7" rx="1"/>'
+            '<rect x="14" y="14" width="7" height="7" rx="1"/>'
+            '<rect x="3" y="14" width="7" height="7" rx="1"/>',
+    "check": '<polyline points="9 11 12 14 22 4"/>'
+             '<path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
+    "bell": '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>'
+            '<path d="M13.73 21a2 2 0 0 1-3.46 0"/>',
+    "calendar": '<rect x="3" y="4" width="18" height="17" rx="2"/>'
+                '<line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/>'
+                '<line x1="3" y1="10" x2="21" y2="10"/>',
+    "users": '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>'
+             '<circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/>'
+             '<path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+    "gear": '<circle cx="12" cy="12" r="3"/>'
+            '<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83'
+            'l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0'
+            'v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1'
+            '-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3'
+            'a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06'
+            'a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51'
+            'V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06'
+            'a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0'
+            ' 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
+    "home": '<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'
+            '<polyline points="9 22 9 12 15 12 15 22"/>',
+}
+
+
+def _icon(name: str) -> str:
+    return (f'<svg class="nico" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+            f'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" '
+            f'aria-hidden="true">{_NAV_ICONS[name]}</svg>')
+
+
 def sidebar(active: str, day: str, user: dict) -> str:
     """The left navigation rail for a signed-in person."""
     d = esc(day)
     month = esc(day[:7])
+    name = user.get("name") or ""
     if user.get("is_leader"):
         n = user.get("notif_count") or 0
         badge = f'<span class="navbadge">{n}</span>' if n else ""
         links = [
-            ("dashboard", f"/?date={d}", "📊", "Dashboard", ""),
-            ("tasks", "/tasks", "✅", "Tasks", ""),
-            ("notifications", "/notifications", "🔔", "Notifications", badge),
-            ("calendar", f"/calendar?month={month}", "🗓", "Calendar", ""),
-            ("groups", "/groups", "👥", "Groups & invites", ""),
-            ("settings", "/settings", "⚙️", "Settings", ""),
+            ("dashboard", f"/?date={d}", "grid", "Dashboard", ""),
+            ("tasks", "/tasks", "check", "Tasks", ""),
+            ("notifications", "/notifications", "bell", "Notifications", badge),
+            ("calendar", f"/calendar?month={month}", "calendar", "Calendar", ""),
+            ("groups", "/groups", "users", "Groups & invites", ""),
+            ("settings", "/settings", "gear", "Settings", ""),
         ]
-        role = "Head of the desk" if user.get("is_root") \
-            else "Lead · " + esc(user.get("group_name", ""))
+        if user.get("is_root"):
+            pill_bits = ["Head", name]
+        else:
+            pill_bits = ["Lead · " + user.get("group_name", ""), name]
+        pill_cls = ""
     else:
         links = [
-            ("me", "/me", "🏠", "My day", ""),
-            ("tasks", "/tasks", "✅", "My tasks", ""),
-            ("calendar", f"/calendar?month={month}", "🗓", "Calendar", ""),
+            ("me", "/me", "home", "My day", ""),
+            ("tasks", "/tasks", "check", "My tasks", ""),
+            ("calendar", f"/calendar?month={month}", "calendar", "Calendar", ""),
         ]
-        role = esc(user.get("group_name", "")) or "Member"
+        pill_bits = [name, user.get("group_name", "")]
+        pill_cls = " worker"
+    pill = esc(" · ".join(x for x in pill_bits if x))
 
     items = []
     for key, href, icon, label, badge in links:
         cls = " active" if key == active else ""
         items.append(
             f'<a class="snav-link{cls}" href="{href}">'
-            f'<span class="ico">{icon}</span><span class="lbl">{label}</span>'
+            f'{_icon(icon)}<span class="lbl">{label}</span>'
             f'{badge}<span class="chev">›</span></a>')
 
-    name = user.get("name") or ""
-    initials = esc(_initials(name or user.get("group_name", "")))
-    who = esc(name) if name else esc(user.get("group_name", "Team"))
     return f"""<div class="brand-row">
-  <span class="brand-mark">{_MOOV_MARK}</span>
-  <div><div class="brand-name">MOOV</div><div class="brand-sub">Health Check</div></div>
+  <span class="brand-badge">{_MOOV_MARK}</span>
+  <div class="brand-title">Health<br>Check</div>
 </div>
+<div class="side-rule"></div>
 <nav class="snav">{''.join(items)}</nav>
 <div class="side-spacer"></div>
-<div class="userchip">
-  <span class="uc-avatar">{initials}</span>
-  <div style="min-width:0"><div class="uc-name">{who}</div><div class="uc-role">{role}</div></div>
-</div>
-<a class="signout-btn" href="/logout">↪ Sign out</a>"""
+<span class="role-pill{pill_cls}">{pill}</span>
+<a class="signout-link" href="/logout">Sign out</a>"""
 
 
 def shell(title: str, active: str, day: str, body: str, extra_css: str = "",
