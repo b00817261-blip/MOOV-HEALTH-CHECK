@@ -6,6 +6,7 @@ as a group's leader or a member. Leaders get the boss workspace scoped to their
 subtree; members just update their tasks, and the report assembles itself.
 """
 
+import datetime as _dt
 import http.cookiejar
 import json
 import re
@@ -443,6 +444,29 @@ def test_member_cant_do_it_and_lead_declines(server):
     _, body = w.post("/tasks", {"action": "resolve", "id": tid,
                                 "request_id": rid, "decision": "approve"})
     assert "leader can answer requests" in body
+
+
+def test_this_week_rollup_widens_the_window(server):
+    m = head(server)
+    store = HealthCheckHandler.state.tasks
+    today = _dt.date.today()
+    plan = [("Done today", 0), ("Done midweek", 3), ("Done long ago", 10)]
+    for title, delta in plan:
+        _, body = m.post("/tasks", {"action": "add", "title": title, "team_id": "t1"})
+        tid = _task_id(body)
+        store.record_update(tid, (today - _dt.timedelta(days=delta)).isoformat(),
+                            status="done", by="Aki")
+
+    # Today counts everything currently done on the board (3).
+    _, today_body = m.get("/")
+    assert 'c-green">3</b> completed' in today_body
+    assert "Groups updated today" in today_body
+
+    # This week counts only completions in the last 7 days (today + midweek = 2).
+    _, week_body = m.get("/?range=week")
+    assert 'c-green">2</b> completed' in week_body
+    assert "Groups updated this week" in week_body
+    assert 'href="/?range=week"' in week_body
 
 
 def test_calendar_shows_deadlines_and_updates(server):

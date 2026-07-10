@@ -164,9 +164,14 @@ def _scoped_roster(state: AppState, user: dict | None) -> dict:
     return ordered
 
 
-def completion_stats(state: AppState, day: str, roster: dict | None = None) -> dict:
+def completion_stats(state: AppState, day: str, roster: dict | None = None,
+                     span: str = "today") -> dict:
     """Everything the manager's 'Daily work completion' dashboard shows,
-    assembled purely from the groups' task updates — no separate report."""
+    assembled purely from the groups' task updates — no separate report.
+
+    ``span`` is ``"today"`` (just ``day``) or ``"week"`` (the 7 days ending on
+    ``day``): completions and group updates are then counted over that window,
+    while pending/overdue/blocked always reflect the current, live state."""
     full_roster = state.roster()
     if roster is None:
         roster = full_roster
@@ -179,13 +184,33 @@ def completion_stats(state: AppState, day: str, roster: dict | None = None) -> d
                  or (is_head and not t.get("team_id"))]
     tasks = [t for t in all_tasks if t.get("status") != "canceled"]
 
+    is_week = span == "week"
+    span_days = 7 if is_week else 1
+    window_start = (date_cls.fromisoformat(day)
+                    - timedelta(days=span_days - 1)).isoformat()
+
+    def in_window(dstr):
+        return bool(dstr) and window_start <= dstr <= day
+
+    def window_update(t):
+        """The task's latest update within the window, if any."""
+        upds = t.get("updates") or {}
+        days = sorted((d for d in upds if in_window(d)), reverse=True)
+        return upds[days[0]] if days and isinstance(upds[days[0]], dict) else None
+
     def is_open(t):
         return t.get("status") in ("todo", "doing")
 
     def is_overdue(t):
         return is_open(t) and t.get("due_date") and t["due_date"] < day
 
-    done = [t for t in tasks if t.get("status") == "done"]
+    def is_completed(t):
+        # Over a week we count everything finished in the window; for a single
+        # day, whatever is currently done on the board.
+        return in_window(t.get("completed_on")) if is_week \
+            else t.get("status") == "done"
+
+    done = [t for t in tasks if is_completed(t)]
     blocked = [t for t in tasks if t.get("status") == "waiting"]
     overdue = [t for t in tasks if is_overdue(t)]
     pending = [t for t in tasks if is_open(t) and not is_overdue(t)]
@@ -201,14 +226,14 @@ def completion_stats(state: AppState, day: str, roster: dict | None = None) -> d
     on_track = active_groups = updated_groups = clean_count = 0
     for tid, info in roster.items():
         gtasks = [t for t in tasks if t.get("team_id") == tid]
-        g_done = sum(1 for t in gtasks if t.get("status") == "done")
+        g_done = sum(1 for t in gtasks if is_completed(t))
         g_over = sum(1 for t in gtasks if is_overdue(t))
         g_block = sum(1 for t in gtasks if t.get("status") == "waiting")
         g_soon = sum(1 for t in gtasks if tasks_mod.due_bucket(t, day) == "due_soon")
 
         todays = []
         for t in gtasks:
-            upd = tasks_mod.update_for_day(t, day)
+            upd = window_update(t)
             if upd:
                 todays.append((t, upd))
         updated = bool(todays)
@@ -332,16 +357,21 @@ def completion_stats(state: AppState, day: str, roster: dict | None = None) -> d
         })
     attention = attention[:5]
 
-    due_today_all = [t for t in tasks if t.get("due_date") == day]
-    due_cleared = sum(1 for t in due_today_all if t.get("status") == "done")
+    if is_week:
+        due_set = [t for t in tasks if in_window(t.get("due_date"))]
+        upd_label, due_label = "Groups updated this week", "This week's dues cleared"
+    else:
+        due_set = [t for t in tasks if t.get("due_date") == day]
+        upd_label, due_label = "Groups updated today", "Today's dues cleared"
+    due_cleared = sum(1 for t in due_set if t.get("status") == "done")
     open_all = len(pending) + len(overdue) + len(blocked)
     checklist = [
-        ("Groups updated today",
+        (upd_label,
          round(100 * updated_groups / g_total) if g_total else 0),
         ("Tasks on schedule",
          round(100 * len(pending) / open_all) if open_all else 100),
-        ("Today's dues cleared",
-         round(100 * due_cleared / len(due_today_all)) if due_today_all else 100),
+        (due_label,
+         round(100 * due_cleared / len(due_set)) if due_set else 100),
         ("No friction reported",
          round(100 * clean_count / g_total) if g_total else 0),
     ]
@@ -367,8 +397,12 @@ def completion_stats(state: AppState, day: str, roster: dict | None = None) -> d
     hour = datetime.now(timezone.utc).hour
     greeting = ("Good morning" if hour < 12 else
                 "Good afternoon" if hour < 18 else "Good evening")
+    ws = date_cls.fromisoformat(window_start)
+    week_label = f"{ws.day} {ws.strftime('%b')} – {d.day} {d.strftime('%b')}"
     return {
         "requests": requests,
+        "span": span,
+        "week_label": week_label,
         "day_label": day_label,
         "hero_date": f"{d.strftime('%A')} {d.day} {d.strftime('%B')}",
         "greeting": greeting,
@@ -389,11 +423,11 @@ def completion_stats(state: AppState, day: str, roster: dict | None = None) -> d
 
 def dashboard_page(state: AppState, day: str, submitted_team: str = "",
                    user: dict | None = None, toast: str = "",
-                   error: str = "") -> str:
+                   error: str = "", span: str = "today") -> str:
     roster = _scoped_roster(state, user)
     return pages.completion_dashboard(
-        completion_stats(state, day, roster), day, user=user,
-        submitted=submitted_team, toast=toast, error=error
+        completion_stats(state, day, roster, span=span), day, user=user,
+        submitted=submitted_team, toast=toast, error=error, span=span
     )
 
 
@@ -769,8 +803,9 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
             submitted = (qs.get("submitted", [""])[0])[:80]
             toast = (qs.get("ok", [""])[0])[:160]
             error = (qs.get("err", [""])[0])[:160]
+            span = "week" if (qs.get("range", [""])[0] == "week") else "today"
             self._send(dashboard_page(self.state, day, submitted, user=user,
-                                      toast=toast, error=error))
+                                      toast=toast, error=error, span=span))
         elif path == "/me":
             try:
                 sent = int((qs.get("sent", ["0"])[0] or "0")[:4])

@@ -1159,9 +1159,10 @@ def _requests_card(requests: list) -> str:
 
 def completion_dashboard(stats: dict, day: str, user: dict | None = None,
                          submitted: str = "", toast: str = "",
-                         error: str = "") -> str:
+                         error: str = "", span: str = "today") -> str:
     tiles = stats["tiles"]
     g_total = stats["groups_total"]
+    is_week = span == "week"
 
     if not g_total:
         body = f"""<h1>Daily work completion</h1>
@@ -1199,11 +1200,17 @@ def completion_dashboard(stats: dict, day: str, user: dict | None = None,
         nudge_btn = (f'<a class="hbtn navy" href="/tasks?team={esc(worst["id"])}">'
                      f'Nudge {esc(worst["name"])} group ↗</a>')
 
+    if is_week:
+        subline = (f'{on_track} of {g_total} groups on track · this week · '
+                   f'{esc(stats.get("week_label", ""))}')
+    else:
+        subline = (f'{on_track} of {g_total} groups on track · updated '
+                   f'{esc(stats["generated_at"])}')
     hero = f"""<div class="card hero">
   <div class="hero-l">
     <div class="greet">{esc(stats['greeting'])}, {esc((user or {}).get('name') or 'there')}</div>
     <div class="head">{headline}</div>
-    <div class="subline">{on_track} of {g_total} groups on track · updated {esc(stats['generated_at'])}</div>
+    <div class="subline">{subline}</div>
     <div class="hero-btns">{nudge_btn}
       <a class="hbtn ghost" href="/tasks">View all overdue</a></div>
   </div>
@@ -1277,7 +1284,7 @@ def completion_dashboard(stats: dict, day: str, user: dict | None = None,
 
     body = f"""<h1 class="sr-only">Daily work completion</h1>
 <div class="dtop">
-  <div class="dtoggle"><a class="on" href="/">Today</a><a href="/">This week</a></div>
+  <div class="dtoggle"><a{' class="on"' if not is_week else ''} href="/">Today</a><a{' class="on"' if is_week else ''} href="/?range=week">This week</a></div>
   <div class="dright"><span class="live"><span class="ldot"></span>Live · updated just now</span>
     <span class="kebab">⋯</span></div>
 </div>
@@ -1289,7 +1296,7 @@ def completion_dashboard(stats: dict, day: str, user: dict | None = None,
 <div class="eyebrow2">Groups · tap to open</div>
 <div class="groupgrid">{''.join(gcards)}</div>
 <div class="grid2">
-<div class="card"><h3>Today's report <span class="muted">· assembles itself from the groups' updates</span></h3>
+<div class="card"><h3>{"This week's report" if is_week else "Today's report"} <span class="muted">· assembles itself from the groups' updates</span></h3>
 {group_report_cards(stats["group_reports"], stats["silent_groups"])}
 </div>
 <div class="card"><h3>Daily checklist · groups</h3><ul class="checklist">{''.join(checklist)}</ul></div>
