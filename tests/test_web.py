@@ -299,9 +299,9 @@ def test_boss_edits_where_its_at_channels(server):
 def test_dashboard_empty_day(server):
     _, body = head(server).get(f"/?date={DAY}")
     assert "Daily work completion" in body
+    assert "Welcome back" in body and "Your team" in body
     assert "Team One" in body and "Team Two" in body
-    assert "no updates yet" in body
-    assert "0 of 2 groups on track" in body
+    assert "At Risk" in body            # no tasks yet → groups at risk
     assert "Groups updated today" in body
     assert "Today's report" in body
 
@@ -356,7 +356,7 @@ def test_updates_assemble_the_report_with_link_and_friction(server):
     assert "in Email" in dash
     assert "https://mail.example.com/thread/9920" in dash  # the boss can open it
     assert "Waiting on external" in dash
-    assert "1 of 2 groups on track" in dash
+    assert "Welcome back" in dash and "Your team" in dash
 
 
 def test_member_updates_only_their_own_tasks(server):
@@ -548,12 +548,14 @@ def test_this_week_rollup_widens_the_window(server):
 
     # Today counts everything currently done on the board (3).
     _, today_body = m.get("/")
-    assert 'c-green">3</b> completed' in today_body
+    assert '<div class="sc-num">3</div><div class="sc-sub">Tasks completed' \
+        in today_body
     assert "Groups updated today" in today_body
 
     # This week counts only completions in the last 7 days (today + midweek = 2).
     _, week_body = m.get("/?range=week")
-    assert 'c-green">2</b> completed' in week_body
+    assert '<div class="sc-num">2</div><div class="sc-sub">Tasks completed' \
+        in week_body
     assert "Groups updated this week" in week_body
     assert 'href="/?range=week"' in week_body
 

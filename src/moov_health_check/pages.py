@@ -985,6 +985,44 @@ def me_page(user: dict, tasks: list, today: str, channels: list | None = None,
 # ---------------------------------------------------------------------------
 
 _DASH_CSS = """
+/* Welcome hero + stat grid */
+.welcome-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+.welcome-hero { background: var(--navy); color: #fff; border-radius: 18px; padding: 34px 32px;
+  display: flex; flex-direction: column; justify-content: center; }
+.welcome-hero .w-greet { font-size: 34px; font-weight: 800; letter-spacing: -.6px; line-height: 1.1; }
+.welcome-hero .w-sub { color: #c7d6e2; font-size: 15px; margin-top: 8px; }
+.welcome-hero .w-pill { align-self: flex-start; margin-top: 20px; background: rgba(255,255,255,.14);
+  border: 1px solid rgba(255,255,255,.22); border-radius: 22px; padding: 9px 16px; font-weight: 700;
+  font-size: 14px; }
+.statgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.statcard { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px;
+  box-shadow: 0 1px 2px rgba(16,49,79,.05); display: flex; flex-direction: column; justify-content: center; }
+.statcard .sc-top { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 800;
+  letter-spacing: .8px; text-transform: uppercase; color: var(--muted); }
+.statcard .sc-dot { width: 9px; height: 9px; border-radius: 50%; }
+.statcard .sc-num { font-size: 40px; font-weight: 800; color: var(--ink); line-height: 1.05; margin: 4px 0 2px; }
+.statcard .sc-sub { font-size: 13px; color: var(--muted); }
+.metric4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 8px; }
+.metric { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px;
+  display: flex; align-items: center; gap: 14px; box-shadow: 0 1px 2px rgba(16,49,79,.05); }
+.metric .m-ico { font-size: 20px; }
+.metric .m-num { font-size: 26px; font-weight: 800; color: var(--ink); line-height: 1; }
+.metric .m-lbl { font-size: 11px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: var(--muted); margin-top: 3px; }
+.sec-head { display: flex; align-items: center; gap: 9px; font-size: 18px; font-weight: 800;
+  color: var(--ink); margin: 24px 2px 12px; }
+.teamtable { padding: 4px 8px; }
+.teamtable td, .teamtable th { padding: 14px 12px; }
+.teamtable .tt-name { font-weight: 700; color: var(--ink); }
+.tt-prog { display: flex; align-items: center; gap: 10px; min-width: 130px; }
+.tt-track { flex: 1; background: #eef1f4; border-radius: 8px; height: 7px; overflow: hidden; }
+.tt-fill { height: 100%; border-radius: 8px; }
+.tt-pct { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 34px; }
+.tt-status { display: inline-flex; align-items: center; gap: 7px; font-weight: 700; font-size: 13px; }
+.tt-status .s-dot { width: 8px; height: 8px; border-radius: 50%; }
+@media (max-width: 900px) {
+  .welcome-row { grid-template-columns: 1fr; }
+  .metric4 { grid-template-columns: repeat(2, 1fr); }
+}
 .dtop { display: flex; align-items: center; justify-content: space-between; gap: 12px;
   margin-bottom: 16px; flex-wrap: wrap; }
 .dtoggle { display: flex; gap: 0; background: #fff; border: 1px solid var(--line);
@@ -997,28 +1035,10 @@ _DASH_CSS = """
   background: var(--green); margin-right: 6px; vertical-align: middle; }
 .kebab { border: 1px solid var(--line); background: #fff; color: var(--muted); border-radius: 9px;
   padding: 5px 11px; font-weight: 800; letter-spacing: 1px; line-height: 1; }
-.hero { background: #e8edf1; display: flex; gap: 20px; align-items: center;
-  justify-content: space-between; padding: 26px 28px; }
-.hero-l { min-width: 0; }
-.hero .greet { font-size: 14px; color: var(--muted); font-weight: 600; margin-bottom: 6px; }
-.hero .head { font-size: 30px; line-height: 1.14; letter-spacing: -.6px; color: var(--ink);
-  margin: 0 0 8px; font-weight: 800; }
-.hero .subline { font-size: 14px; color: var(--muted); margin-bottom: 18px; }
-.hero-btns { display: flex; gap: 10px; flex-wrap: wrap; }
 .hbtn { display: inline-block; padding: 11px 18px; border-radius: 11px; font-weight: 700; font-size: 14px; }
 .hbtn.navy { background: var(--navy); color: #fff; }
 .hbtn.navy:hover { background: var(--navy-d); }
 .hbtn.ghost { background: #fff; border: 1px solid #d5dce2; color: var(--ink2); }
-.donut { width: 130px; height: 130px; flex: none; }
-.donut-v { font-size: 26px; font-weight: 800; fill: var(--ink); }
-.donut-k { font-size: 12px; fill: var(--muted); }
-.statstrip { display: grid; grid-template-columns: repeat(4, 1fr); padding: 4px 0; }
-.statstrip > div { text-align: center; padding: 14px 8px; border-right: 1px solid var(--line);
-  font-size: 14px; color: var(--muted); }
-.statstrip > div:last-child { border-right: 0; }
-.statstrip b { font-size: 17px; font-weight: 800; margin-right: 5px; color: var(--ink); }
-.c-green { color: var(--green) !important; } .c-orange { color: var(--orange) !important; }
-.c-navy { color: var(--navy) !important; }
 .att-head { display: flex; align-items: center; gap: 9px; font-size: 16px; font-weight: 800;
   color: var(--ink); margin-bottom: 6px; }
 .att-head .adot { width: 9px; height: 9px; border-radius: 50%; background: var(--orange); }
@@ -1035,35 +1055,14 @@ _DASH_CSS = """
   justify-content: center; font-weight: 800; font-size: 13px; color: #fff; flex: none; }
 .avatar.soft { background: #fbe0d3; color: #c2521f; }
 .avatar.gray { background: #e7ebee; color: #7a8893; }
-.eyebrow2 { font-size: 12px; font-weight: 800; letter-spacing: 1px; color: var(--muted);
-  text-transform: uppercase; margin: 22px 2px 12px; }
-.groupgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 8px; }
-.gcard { display: block; background: #fff; border: 1px solid var(--line); border-radius: 14px;
-  padding: 16px 16px 15px; box-shadow: 0 1px 2px rgba(16,49,79,.05); }
-.gcard:hover { border-color: #cdd6de; box-shadow: 0 4px 14px rgba(16,49,79,.08); }
-.gc-top { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
-.gc-dot { width: 11px; height: 11px; border-radius: 3px; flex: none; }
-.gc-name { font-weight: 800; color: var(--ink); }
-.gc-chev { margin-left: auto; color: #b7c2cb; font-size: 18px; }
-.gc-num { font-size: 14px; color: var(--muted); margin-bottom: 10px; }
-.gc-num b { font-size: 26px; font-weight: 800; color: var(--ink); margin-right: 2px; }
-.ptrack { background: #eef1f4; border-radius: 8px; height: 8px; overflow: hidden; }
-.pfill { height: 100%; border-radius: 8px; }
-.gc-sub { font-size: 13px; margin-top: 9px; font-weight: 600; }
 .checklist { list-style: none; margin: 0; padding: 0; }
 .checklist li { display: flex; gap: 10px; align-items: center; padding: 11px 2px;
   border-bottom: 1px solid var(--line); font-size: 14px; color: var(--ink2); }
 .checklist li:last-child { border-bottom: 0; }
 .checklist .pct { margin-left: auto; font-weight: 800; font-variant-numeric: tabular-nums; }
-@media (max-width: 820px) { .groupgrid { grid-template-columns: repeat(2, 1fr); }
-  .statstrip { grid-template-columns: repeat(2, 1fr); }
-  .statstrip > div:nth-child(2) { border-right: 0; }
-  .hero { flex-direction: column; align-items: flex-start; } }
-@media (max-width: 560px) { .groupgrid { grid-template-columns: 1fr; } }
 """
 
 _LEVEL_COLOR = {0: "#1e9e5a", 1: "#e8551f", 2: "#d64545"}
-_GROUP_DOTS = ["#103a5b", "#e8551f", "#3d9bd6", "#1e9e5a", "#8a97a3", "#8b6fc9"]
 
 _REPORT_CSS = """
 .rep-head { display: flex; align-items: center; gap: 10px; margin: 18px 0 6px; }
@@ -1078,20 +1077,16 @@ _REPORT_CSS = """
   padding: 1px 9px; font-size: 11px; font-weight: 600; white-space: nowrap; margin-left: 5px; }
 """
 
-def _donut(pct: int) -> str:
-    r = 54
-    circ = 2 * 3.14159265 * r
-    dash = circ * max(0, min(100, pct)) / 100
-    return (
-        f'<svg viewBox="0 0 130 130" class="donut" role="img" aria-label="{pct}% done">'
-        f'<circle cx="65" cy="65" r="{r}" fill="none" stroke="#d9e1e8" stroke-width="12"/>'
-        f'<circle cx="65" cy="65" r="{r}" fill="none" stroke="#103a5b" stroke-width="12" '
-        f'stroke-linecap="round" stroke-dasharray="{dash:.1f} {circ:.1f}" '
-        f'transform="rotate(-90 65 65)"/>'
-        f'<text x="65" y="63" text-anchor="middle" class="donut-v">{pct}%</text>'
-        f'<text x="65" y="82" text-anchor="middle" class="donut-k">done</text>'
-        f'</svg>'
-    )
+
+def _statcard(color: str, label: str, num, sub: str) -> str:
+    return (f'<div class="statcard"><div class="sc-top">'
+            f'<span class="sc-dot" style="background:{color}"></span>{esc(label)}</div>'
+            f'<div class="sc-num">{num}</div><div class="sc-sub">{esc(sub)}</div></div>')
+
+
+def _metric(icon: str, num, label: str) -> str:
+    return (f'<div class="metric"><span class="m-ico">{icon}</span>'
+            f'<div><div class="m-num">{num}</div><div class="m-lbl">{esc(label)}</div></div></div>')
 
 
 def group_report_cards(group_reports: list, silent: list) -> str:
@@ -1268,42 +1263,30 @@ def completion_dashboard(stats: dict, day: str, user: dict | None = None,
     if error:
         toast_html += f'<div class="toast error">⚠ {esc(error)}</div>'
 
-    # Hero headline — call out the group most in need of attention.
-    nudge_btn = ""
-    if worst and tiles["overdue"]:
-        unit = "needs" if tiles["overdue"] == 1 else "need"
-        headline = (f'{esc(worst["name"])} is behind — {tiles["overdue"]} {unit} '
-                    f'action. Start there.')
-    elif worst:
-        headline = f'{esc(worst["name"])} hasn’t checked in yet. Start there.'
-    else:
-        headline = 'Every group is on track. Nice and quiet — keep it rolling.'
-    if worst:
-        nudge_btn = (f'<a class="hbtn navy" href="/tasks?team={esc(worst["id"])}">'
-                     f'Nudge {esc(worst["name"])} group ↗</a>')
-
-    if is_week:
-        subline = (f'{on_track} of {g_total} groups on track · this week · '
-                   f'{esc(stats.get("week_label", ""))}')
-    else:
-        subline = (f'{on_track} of {g_total} groups on track · updated '
-                   f'{esc(stats["generated_at"])}')
-    hero = f"""<div class="card hero">
-  <div class="hero-l">
-    <div class="greet">{esc(stats['greeting'])}, {esc((user or {}).get('name') or 'there')}</div>
-    <div class="head">{headline}</div>
-    <div class="subline">{subline}</div>
-    <div class="hero-btns">{nudge_btn}
-      <a class="hbtn ghost" href="/tasks">View all overdue</a></div>
+    # Welcome hero + a 2×2 grid of headline stats.
+    workspace = "Operations Dashboard" if user.get("is_root") \
+        else f'{esc(user.get("group_name", ""))} Dashboard'
+    status_word = "Needs attention" if (worst or tiles["overdue"]) else "On track"
+    pill = f'↗ {pct}% Complete — {status_word}'
+    hero = f"""<div class="welcome-row">
+  <div class="welcome-hero">
+    <div class="w-greet">Welcome back, {esc(user.get('name') or 'there')}</div>
+    <div class="w-sub">{workspace} — {esc(stats.get('hero_date', stats['day_label']))}</div>
+    <div class="w-pill">{pill}</div>
   </div>
-  {_donut(pct)}
+  <div class="statgrid">
+    {_statcard('#1e9e5a', 'Done', tiles['done'], 'Tasks completed')}
+    {_statcard('#b8892f', 'Pending', tiles['pending'], 'Awaiting action')}
+    {_statcard('#d64545', 'Overdue', tiles['overdue'], 'Past due date')}
+    {_statcard('#e8551f', 'Blocked', tiles['blocked'], 'Needs attention')}
+  </div>
 </div>"""
 
-    statstrip = f"""<div class="card statstrip">
-  <div><b class="c-green">{tiles['done']}</b> completed</div>
-  <div><b>{tiles['pending']}</b> pending</div>
-  <div><b class="c-orange">{tiles['overdue']}</b> overdue</div>
-  <div><b class="c-navy">{tiles['blocked']}</b> blocked</div>
+    metric4 = f"""<div class="metric4">
+  {_metric('📄', tiles['total'], 'Total tasks')}
+  {_metric('🕐', tiles.get('in_progress', 0), 'In progress')}
+  {_metric('👥', g_total, 'Team groups')}
+  {_metric('🧑‍🤝‍🧑', stats.get('team_size', 0), 'Team size')}
 </div>"""
 
     # Needs attention now — the actionable overdue/blocked list.
@@ -1329,27 +1312,31 @@ def completion_dashboard(stats: dict, day: str, user: dict | None = None,
                           '<span class="att-count">all clear</span></div>'
                           '<div class="muted" style="padding:8px 0">Nothing overdue or blocked. 🎉</div></div>')
 
-    # Group cards.
-    gcards = []
-    for i, r in enumerate(stats["rows"]):
-        dot = _GROUP_DOTS[i % len(_GROUP_DOTS)]
+    # "Your Team" table — one row per group.
+    trows = []
+    for r in stats["rows"]:
         frac = round(100 * r["done"] / r["total"]) if r["total"] else 0
-        bar = "#1e9e5a" if r["level"] == 0 else "#e8551f"
-        if r["overdue"]:
-            sub = f'<span style="color:#e8551f">{r["overdue"]} overdue</span>'
-        elif not r["filed"]:
-            sub = '<span class="muted">no updates yet</span>'
-        elif r["soon"]:
-            sub = f'<span class="muted">{r["soon"]} due soon</span>'
+        if r["overdue"] or r["level"] == 2 or frac < 50:
+            s_color, s_text = "#d64545", "At Risk"
+        elif frac >= 90:
+            s_color, s_text = "#1e9e5a", "On Track"
         else:
-            sub = '<span style="color:#1e9e5a">on track</span>'
-        gcards.append(f"""<a class="gcard" href="/tasks?team={esc(r['id'])}">
-  <div class="gc-top"><span class="gc-dot" style="background:{dot}"></span>
-    <span class="gc-name">{esc(r['name'])}</span><span class="gc-chev">›</span></div>
-  <div class="gc-num"><b>{r['done']}</b>/ {r['total']} done</div>
-  <div class="ptrack"><div class="pfill" style="width:{frac}%;background:{bar}"></div></div>
-  <div class="gc-sub">{sub}</div>
-</a>""")
+            s_color, s_text = "#b8892f", "Progressing"
+        bar = "#1e9e5a" if frac >= 90 else ("#d64545" if s_text == "At Risk" else "#b8892f")
+        lead = esc(r["lead"]) or '<span class="muted">—</span>'
+        trows.append(f"""<tr>
+  <td><a class="tt-name" href="/tasks?team={esc(r['id'])}">{esc(r['name'])}</a></td>
+  <td>{lead}</td>
+  <td>{r['members']}</td>
+  <td>{r['done']}/{r['total']}</td>
+  <td><div class="tt-prog"><div class="tt-track"><div class="tt-fill" style="width:{frac}%;background:{bar}"></div></div><span class="tt-pct">{frac}%</span></div></td>
+  <td><span class="tt-status" style="color:{s_color}"><span class="s-dot" style="background:{s_color}"></span>{s_text}</span></td>
+</tr>""")
+    team_table = f"""<div class="sec-head">👥 Your team</div>
+<div class="card teamtable" style="padding:0 8px">
+<table><thead><tr><th>Group</th><th>Leader</th><th>Members</th><th>Tasks</th>
+<th>Progress</th><th>Status</th></tr></thead>
+<tbody>{''.join(trows)}</tbody></table></div>"""
 
     checklist = []
     for label, pct_v in stats["checklist"]:
@@ -1372,11 +1359,10 @@ def completion_dashboard(stats: dict, day: str, user: dict | None = None,
 </div>
 {toast_html}
 {hero}
-{statstrip}
+{metric4}
 {_requests_card(stats.get("requests", []))}
 {attention_card}
-<div class="eyebrow2">Groups · tap to open</div>
-<div class="groupgrid">{''.join(gcards)}</div>
+{team_table}
 <div class="grid2">
 <div class="card"><h3>{"This week's report" if is_week else "Today's report"} <span class="muted">· assembles itself from the groups' updates</span></h3>
 {group_report_cards(stats["group_reports"], stats["silent_groups"])}

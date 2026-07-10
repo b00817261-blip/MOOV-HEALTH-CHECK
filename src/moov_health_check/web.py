@@ -281,9 +281,21 @@ def completion_stats(state: AppState, day: str, roster: dict | None = None,
     blocked = [t for t in tasks if t.get("status") == "waiting"]
     overdue = [t for t in tasks if is_overdue(t)]
     pending = [t for t in tasks if is_open(t) and not is_overdue(t)]
+    in_progress = [t for t in tasks if t.get("status") == "doing"]
     done_today = [t for t in done if t.get("completed_on") == day]
 
     team_names = {tid: info.get("team_name", tid) for tid, info in roster.items()}
+
+    # Registered people per group (non-leaders = "members"), and the whole
+    # team's size — for the dashboard's team table and metric strip.
+    members_by_group: dict = {}
+    team_size = 0
+    for p in state.accounts.people():
+        gid = p.get("group_id")
+        if gid in roster:
+            team_size += 1
+            if not p.get("is_leader"):
+                members_by_group[gid] = members_by_group.get(gid, 0) + 1
 
     rows = []
     group_reports = []
@@ -364,6 +376,7 @@ def completion_stats(state: AppState, day: str, roster: dict | None = None,
         rows.append({
             "id": tid, "name": info.get("team_name", tid),
             "lead": info.get("leader", info.get("manager", "")),
+            "members": members_by_group.get(tid, 0),
             "done": g_done, "total": len(gtasks),
             "overdue": g_over, "blocked": g_block, "soon": g_soon,
             "filed": updated, "last": last, "level": level,
@@ -476,7 +489,8 @@ def completion_stats(state: AppState, day: str, roster: dict | None = None,
         "generated_at": datetime.now(timezone.utc).strftime("%H:%M UTC"),
         "tiles": {"done": len(done), "total": len(tasks),
                   "pending": len(pending), "overdue": len(overdue),
-                  "blocked": len(blocked)},
+                  "blocked": len(blocked), "in_progress": len(in_progress)},
+        "team_size": team_size,
         "pct": pct, "on_track": on_track, "groups_total": g_total,
         "rows": rows, "worst": worst, "attention": attention,
         "outstanding": outstanding, "checklist": checklist,
