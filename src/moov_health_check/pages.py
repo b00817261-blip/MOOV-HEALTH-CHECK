@@ -1379,6 +1379,9 @@ _GROUPS_CSS = """
 .invite input { flex: 1; min-width: 220px; font-size: 12px; color: var(--navy); }
 .gactions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
 .gactions form { display: inline-flex; gap: 6px; align-items: center; }
+.addperson { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.addperson .lbl { font-size: 12px; color: var(--muted); min-width: 92px; }
+.addperson input[type=email] { flex: 1; min-width: 200px; font-size: 13px; }
 .addsub { margin-top: 10px; padding-top: 10px; border-top: 1px dashed #d5dce2; }
 """
 
@@ -1408,6 +1411,19 @@ def _group_node_html(org, gid: str, base_url: str, depth: int = 0) -> str:
 
     invites = invite_row("leader", "Leader link") + invite_row("member", "Member link")
 
+    # Add someone who already has an account, straight into this group by email
+    # — no invite link needed.
+    add_person = (
+        f'<form method="post" action="/groups" class="addperson">'
+        f'<input type="hidden" name="action" value="add_person">'
+        f'<input type="hidden" name="id" value="{esc(gid)}">'
+        f'<span class="lbl">Already registered?</span>'
+        f'<input type="email" name="email" required placeholder="their email">'
+        f'<select name="role"><option value="leader">as leader</option>'
+        f'<option value="member">as member</option></select>'
+        f'<button type="submit" class="ghost">Add directly</button></form>'
+    )
+
     actions = (
         f'<form method="post" action="/groups" '
         f'onsubmit="return confirm(\'Remove {name} and everything under it?\')">'
@@ -1436,7 +1452,7 @@ def _group_node_html(org, gid: str, base_url: str, depth: int = 0) -> str:
     inner_html = f'<div style="margin-left:22px;margin-top:10px">{inner}</div>' if inner else ""
     return (f'<div class="gnode">'
             f'<div class="ghead"><span class="gname">{name}</span>{lead_html}</div>'
-            f'{invites}<div class="gactions">{actions}</div>{addsub}'
+            f'{invites}{add_person}<div class="gactions">{actions}</div>{addsub}'
             f'{inner_html}</div>')
 
 

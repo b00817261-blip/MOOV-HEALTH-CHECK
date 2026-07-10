@@ -529,6 +529,26 @@ def handle_groups_action(state: AppState, form: dict, user: dict) -> tuple[bool,
         if state.org.rotate_token(gid, role) is None:
             return False, "Could not refresh that link."
         return True, "New invite link generated — the old one no longer works."
+    if action == "add_person":
+        gid, role = field("id"), field("role")
+        email = normalize_email(field("email"))
+        if not (user.get("is_root") or gid in scope):
+            return False, "That group isn't yours."
+        g = state.org.get(gid)
+        if g is None:
+            return False, "Group not found."
+        if not valid_email(email):
+            return False, "Please enter a valid email address."
+        is_leader = role == "leader"
+        acct = state.accounts.assign(email, gid, is_leader)
+        if acct is None:
+            return False, ("No account with that email yet — share the invite "
+                           "link so they can register first.")
+        if is_leader:
+            state.org.update_group(gid, leader=acct.get("name", ""))
+        who = acct.get("name") or email
+        return True, (f"Added {who} to {g.get('team_name', gid)} "
+                      f"as {'leader' if is_leader else 'member'}.")
     return False, "Unknown action."
 
 

@@ -108,6 +108,24 @@ class AccountStore:
             self._save(accounts)
         return acct
 
+    def assign(self, email: str, group_id: str, is_leader: bool) -> dict | None:
+        """Move an existing account into a group (as leader or member).
+
+        Returns the updated account, or None if no account has that email —
+        so the head can add someone who already registered, straight into a
+        group, without them opening an invite link."""
+        email = normalize_email(email)
+        with self._lock:
+            accounts = self._load()
+            acct = accounts.get(email)
+            if acct is None:
+                return None
+            acct["group_id"] = group_id
+            acct["is_leader"] = bool(is_leader)
+            accounts[email] = acct
+            self._save(accounts)
+        return acct
+
     def check(self, email: str, code: str) -> dict | None:
         """Return the account if ``email`` + ``code`` match, else None.
 

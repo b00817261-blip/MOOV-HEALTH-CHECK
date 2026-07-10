@@ -245,6 +245,26 @@ def test_reinvite_rotates_the_link(server):
     assert "invalid" in body
 
 
+def test_add_registered_person_to_group_by_email(server):
+    m = head(server)
+    # Suki registers as head of her own desk elsewhere... actually she joins
+    # some group first so she has an account.
+    member(server, "t2", "Suki", email="suki@moov.test")
+    # The head spins up a new group and adds Suki straight in as its leader.
+    m.post("/groups", {"action": "add", "name": "MOOV"})
+    _, body = m.post("/groups", {"action": "add_person", "id": "moov",
+                                 "email": "suki@moov.test", "role": "leader"})
+    assert "Added Suki to MOOV as leader" in body
+    acct = HealthCheckHandler.state.accounts.get("suki@moov.test")
+    assert acct["group_id"] == "moov" and acct["is_leader"] is True
+    assert HealthCheckHandler.state.org.get("moov")["leader"] == "Suki"
+
+    # An email with no account is turned away (share the invite link instead).
+    _, body = m.post("/groups", {"action": "add_person", "id": "moov",
+                                 "email": "stranger@nowhere.test", "role": "member"})
+    assert "No account with that email" in body
+
+
 def test_delete_group_signs_out_its_people(server):
     m = head(server)
     m.post("/groups", {"action": "add", "name": "IT"})
