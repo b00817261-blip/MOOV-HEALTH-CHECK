@@ -887,17 +887,19 @@ Your email + code keep your account — sign in from any device and pick up wher
 
 
 def restore_widget(goto: str, center: bool = False) -> str:
-    """Offer to put the desk back from this browser's automatic backup.
+    """Put the desk back from this browser's automatic backup — automatically.
 
-    Rendered only when the server-side desk is empty (no head / no groups);
-    the script shows the card only if this browser actually holds a backup."""
+    Only rendered when the server-side desk is empty (no head / no groups), so
+    it's always safe to restore without clobbering live data. If this browser
+    holds a backup, it restores itself the moment the page loads; the button is
+    just a manual fallback if the auto-restore ever fails."""
     style = ("display:none;border-left:4px solid var(--green)"
              + (";max-width:860px;margin:16px auto 0" if center else ";margin-top:16px"))
     return f"""<div class="card" id="restorecard" style="{style}">
-  <h3>💾 Restore your desk</h3>
+  <h3>💾 Restoring your desk…</h3>
   <div class="desc" style="color:var(--muted);font-size:13px" id="restoretext">
-    This browser holds an automatic backup of your desk.</div>
-  <button type="button" id="restorebtn" style="margin-top:10px">Restore my desk →</button>
+    This browser holds an automatic backup — putting everything back now.</div>
+  <button type="button" id="restorebtn" style="margin-top:10px;display:none">Restore my desk →</button>
 </div>
 <script>
 (function() {{
@@ -906,23 +908,33 @@ def restore_widget(goto: str, center: bool = False) -> str:
   var b; try {{ b = JSON.parse(raw) }} catch (e) {{ return }}
   if (!b || b.moov_backup !== 1) return;
   document.getElementById('restorecard').style.display = 'block';
-  if (b.saved_at) document.getElementById('restoretext').textContent =
-    'This browser holds an automatic backup of your desk (saved ' + b.saved_at +
-    '), but the server looks freshly reset. One click puts everything back — ' +
-    'groups, tasks, updates and accounts.';
-  document.getElementById('restorebtn').onclick = function() {{
-    var btn = this; btn.disabled = true; btn.textContent = 'Restoring…';
+  var card = document.getElementById('restorecard');
+  var head = card.querySelector('h3');
+  var text = document.getElementById('restoretext');
+  var btn = document.getElementById('restorebtn');
+  function doRestore() {{
+    head.textContent = '💾 Restoring your desk…';
+    text.textContent = 'Putting everything back — groups, tasks, updates and accounts.';
+    btn.style.display = 'none';
     fetch('/restore', {{method: 'POST',
         headers: {{'Content-Type': 'application/json'}}, body: raw}})
       .then(function(r) {{ return r.json() }})
       .then(function(j) {{
         if (j.ok) {{ location.href = '{goto}'; }}
-        else {{ alert(j.error || 'Restore failed.');
-               btn.disabled = false; btn.textContent = 'Restore my desk →'; }}
+        else {{ showManual(j.error || 'Restore failed.'); }}
       }})
-      .catch(function() {{ alert('Restore failed.');
-        btn.disabled = false; btn.textContent = 'Restore my desk →'; }});
-  }};
+      .catch(function() {{ showManual('Restore failed — check your connection.'); }});
+  }}
+  function showManual(msg) {{
+    head.textContent = '💾 Restore your desk';
+    text.textContent = (b.saved_at ? 'Backup from ' + b.saved_at + '. ' : '') + msg +
+      ' Tap to try again.';
+    btn.style.display = ''; btn.disabled = false;
+    btn.textContent = 'Restore my desk →';
+  }}
+  btn.onclick = doRestore;
+  // The desk is empty and we hold a backup — restore straight away.
+  doRestore();
 }})();
 </script>"""
 
