@@ -194,6 +194,32 @@ footer { margin-top: 40px; color: var(--muted); font-size: 12px; text-align: cen
 .cta { display: inline-block; padding: 12px 20px; background: var(--navy); color: #fff !important;
   border-radius: 11px; font-weight: 700; margin-top: 8px; }
 .cta:hover { background: var(--navy-d); }
+/* Login globe — a faint wireframe world that slowly turns behind the hero.
+   Pure SVG + CSS, no assets. Meridians are full-height ellipses whose
+   horizontal radius is squeezed in staggered phases (scaleX), so together
+   they read as longitude lines sweeping around a spinning globe. */
+.globe-bg { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+.globe-bg svg { position: absolute; top: 50%; right: -6%; width: min(760px, 78vw);
+  height: auto; transform: translateY(-50%); opacity: .5; }
+.globe-bg .rim, .globe-bg .lat, .globe-bg .mrd {
+  fill: none; stroke: var(--navy); stroke-width: 1.4; }
+.globe-bg .rim { stroke-width: 1.8; opacity: .32; }
+.globe-bg .lat { opacity: .2; }
+.globe-bg .mrd { opacity: .26; transform-box: fill-box; transform-origin: center;
+  animation: moov-spin 16s ease-in-out infinite; }
+.globe-bg .dot { animation: moov-dot 4.5s ease-in-out infinite; }
+.globe-bg .dot.b  { fill: #8ab4f8; }
+.globe-bg .dot.o  { fill: var(--orange); animation-delay: -1.2s; }
+.globe-bg .dot.g  { fill: var(--green);  animation-delay: -2.4s; }
+.globe-bg .dot.b2 { fill: #6f9fe6; animation-delay: -3.3s; }
+@keyframes moov-spin { 0% { transform: scaleX(1); } 50% { transform: scaleX(-1); } 100% { transform: scaleX(1); } }
+@keyframes moov-dot { 0%, 100% { opacity: .9; } 50% { opacity: .3; } }
+@media (max-width: 760px) {
+  .globe-bg svg { right: -34%; width: 150vw; opacity: .28; } }
+@media (prefers-reduced-motion: reduce) {
+  .globe-bg .mrd, .globe-bg .dot { animation: none; } }
+/* Keep page content above the turning globe. */
+.wrap { position: relative; z-index: 1; }
 /* --- Interactivity: transitions everywhere, press feedback, gentle hover lift --- */
 button, .hbtn, .cta, .filters a, .snav-link, .signout-btn, .signout-link,
 .optchip, .gcard, details summary { transition: background .16s ease, color .16s ease,
@@ -907,12 +933,41 @@ def calendar_page(roster: dict, tasks: list, reports_by_day: dict,
 # /login and /join — sign in as the head, or join via an invite link
 # ---------------------------------------------------------------------------
 
+def _login_globe() -> str:
+    """A faint wireframe globe that turns behind the sign-in hero (see CSS)."""
+    cx = cy = 350
+    r = 300
+    # Meridians: identical full ellipses, animation phase-shifted so at any
+    # moment they sit at different points of the sweep — a rotating globe.
+    n = 8
+    meridians = "".join(
+        f'<ellipse class="mrd" cx="{cx}" cy="{cy}" rx="{r}" ry="{r}" '
+        f'style="animation-delay:{-16 * i / n:.2f}s"/>'
+        for i in range(n)
+    )
+    # Latitudes: static horizontal ellipses, foreshortened for a 3-D feel.
+    lats = "".join(
+        f'<ellipse class="lat" cx="{cx}" cy="{cy + off}" '
+        f'rx="{int((r * r - off * off) ** 0.5)}" ry="44"/>'
+        for off in (-210, -110, 0, 110, 210)
+    )
+    dots = ('<circle class="dot b"  cx="468" cy="248" r="7"/>'
+            '<circle class="dot o"  cx="352" cy="360" r="9"/>'
+            '<circle class="dot g"  cx="516" cy="470" r="6"/>'
+            '<circle class="dot b2" cx="560" cy="300" r="5"/>')
+    return (f'<div class="globe-bg" aria-hidden="true">'
+            f'<svg viewBox="0 0 700 700" preserveAspectRatio="xMidYMid meet">'
+            f'<circle class="rim" cx="{cx}" cy="{cy}" r="{r}"/>'
+            f'{lats}{meridians}{dots}</svg></div>')
+
+
 def login_page(head_exists: bool, error: str = "") -> str:
     error_html = f'<div class="toast error">⚠ {esc(error)}</div>' if error else ""
     head_line = ("Register to oversee the whole desk — we'll email you a code "
                  "to confirm it's you." if not head_exists else
                  "Enter your name and email to confirm you're the head.")
-    body = f"""<div class="login-hero">
+    body = f"""{_login_globe()}
+<div class="login-hero">
   <div class="brand">{_MOOV_MARK}</div>
   <div class="eyebrow" style="margin-top:18px">Daily reporting</div>
   <h1><span class="m">MOOV</span> daily reporting</h1>
