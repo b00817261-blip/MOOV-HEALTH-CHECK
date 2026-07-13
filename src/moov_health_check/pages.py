@@ -201,6 +201,7 @@ footer { margin-top: 40px; color: var(--muted); font-size: 12px; text-align: cen
 .globe-bg { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
 .globe-bg svg { position: absolute; top: 50%; right: -6%; width: min(760px, 78vw);
   height: auto; transform: translateY(-50%); opacity: .5; }
+.globe-bg.subtle svg { opacity: .32; }
 .globe-bg .rim, .globe-bg .lat, .globe-bg .mrd {
   fill: none; stroke: var(--navy); stroke-width: 1.4; }
 .globe-bg .rim { stroke-width: 1.8; opacity: .32; }
@@ -218,8 +219,9 @@ footer { margin-top: 40px; color: var(--muted); font-size: 12px; text-align: cen
   .globe-bg svg { right: -34%; width: 150vw; opacity: .28; } }
 @media (prefers-reduced-motion: reduce) {
   .globe-bg .mrd, .globe-bg .dot { animation: none; } }
-/* Keep page content above the turning globe. */
-.wrap { position: relative; z-index: 1; }
+/* Keep page content above the turning globe (both the signed-out .wrap pages
+   and the signed-in .app shell get their own stacking layer above z-index 0). */
+.wrap, .app { position: relative; z-index: 1; }
 /* --- Interactivity: transitions everywhere, press feedback, gentle hover lift --- */
 button, .hbtn, .cta, .filters a, .snav-link, .signout-btn, .signout-link,
 .optchip, .gcard, details summary { transition: background .16s ease, color .16s ease,
@@ -427,7 +429,8 @@ def shell(title: str, active: str, day: str, body: str, extra_css: str = "",
     if user:
         body_cls = ' class="role-manager"' if user.get("is_leader") else ' class="role-worker"'
         fab = quick_assign_fab() if user.get("is_leader") else ""
-        layout = (f'<div class="app"><aside class="sidebar">{sidebar(active, day, user)}'
+        layout = (f'{_globe_bg(subtle=True)}'
+                  f'<div class="app"><aside class="sidebar">{sidebar(active, day, user)}'
                   f'</aside><main class="main"><div class="mainwrap">{body}'
                   f'<footer>MOOV Health Check · zero-dependency daily operations website</footer>'
                   f'</div></main></div>{fab}')
@@ -933,8 +936,11 @@ def calendar_page(roster: dict, tasks: list, reports_by_day: dict,
 # /login and /join — sign in as the head, or join via an invite link
 # ---------------------------------------------------------------------------
 
-def _login_globe() -> str:
-    """A faint wireframe globe that turns behind the sign-in hero (see CSS)."""
+def _globe_bg(subtle: bool = False) -> str:
+    """A faint wireframe globe that slowly turns in the page background (see CSS).
+
+    `subtle=True` dims it further for content-heavy signed-in pages so it sits
+    quietly behind the cards instead of competing with them."""
     cx = cy = 350
     r = 300
     # Meridians: identical full ellipses, animation phase-shifted so at any
@@ -955,7 +961,8 @@ def _login_globe() -> str:
             '<circle class="dot o"  cx="352" cy="360" r="9"/>'
             '<circle class="dot g"  cx="516" cy="470" r="6"/>'
             '<circle class="dot b2" cx="560" cy="300" r="5"/>')
-    return (f'<div class="globe-bg" aria-hidden="true">'
+    cls = "globe-bg subtle" if subtle else "globe-bg"
+    return (f'<div class="{cls}" aria-hidden="true">'
             f'<svg viewBox="0 0 700 700" preserveAspectRatio="xMidYMid meet">'
             f'<circle class="rim" cx="{cx}" cy="{cy}" r="{r}"/>'
             f'{lats}{meridians}{dots}</svg></div>')
@@ -966,7 +973,7 @@ def login_page(head_exists: bool, error: str = "") -> str:
     head_line = ("Register to oversee the whole desk — we'll email you a code "
                  "to confirm it's you." if not head_exists else
                  "Enter your name and email to confirm you're the head.")
-    body = f"""{_login_globe()}
+    body = f"""{_globe_bg()}
 <div class="login-hero">
   <div class="brand">{_MOOV_MARK}</div>
   <div class="eyebrow" style="margin-top:18px">Daily reporting</div>
