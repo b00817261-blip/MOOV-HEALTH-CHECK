@@ -234,6 +234,34 @@ details summary:active { transform: translateY(1px); }
   .navbadge, .gcount, .today-badge { animation: moovPop .45s cubic-bezier(.2,.8,.3,1) both; }
   .brand-badge { animation: moovPop .5s cubic-bezier(.2,.8,.3,1) both; }
 }
+/* --- Quick-assign popup (free, no external AI — parses one plain line) --- */
+.qa-fab { position: fixed; right: 24px; bottom: 24px; z-index: 60; display: inline-flex;
+  align-items: center; gap: 8px; padding: 13px 20px 13px 16px; border-radius: 30px;
+  background: var(--orange); color: #fff; font-size: 14px; font-weight: 800;
+  box-shadow: 0 8px 24px rgba(232,85,31,.38); }
+.qa-fab:hover { background: var(--orange-d); transform: translateY(-2px); }
+.qa-fab .qa-fab-plus { font-size: 20px; line-height: 1; margin-top: -1px; }
+.qa-dialog { border: 0; border-radius: 18px; padding: 0; width: min(94vw, 460px);
+  box-shadow: 0 30px 80px rgba(16,49,79,.35); color: var(--ink); background: var(--card); }
+.qa-dialog::backdrop { background: rgba(16,49,79,.38); backdrop-filter: blur(2px); }
+.qa-form { padding: 22px 22px 20px; display: flex; flex-direction: column; gap: 12px; }
+.qa-head { display: flex; align-items: center; justify-content: space-between; }
+.qa-title { font-size: 18px; font-weight: 800; }
+.qa-title::before { content: "⚡ "; }
+.qa-x { background: none; color: var(--muted); font-size: 22px; line-height: 1;
+  padding: 2px 8px; border-radius: 8px; }
+.qa-x:hover { background: #eef1f4; color: var(--ink); }
+.qa-sub { color: var(--muted); font-size: 13px; margin-top: -6px; }
+.qa-input { width: 100%; box-sizing: border-box; padding: 12px 13px; font-size: 15px;
+  font-family: inherit; border: 1px solid #d5dce2; border-radius: 12px; resize: vertical; color: var(--ink); }
+.qa-input:focus { outline: none; border-color: var(--navy); box-shadow: 0 0 0 3px rgba(16,58,91,.1); }
+.qa-examples { font-size: 12px; color: var(--muted); line-height: 1.7; }
+.qa-examples span { color: var(--ink2); }
+.qa-actions { display: flex; justify-content: flex-end; }
+.qa-go { padding: 11px 20px; font-size: 14px; }
+@media (max-width: 760px) { .qa-fab { right: 16px; bottom: 78px; padding: 12px 18px; }
+  .qa-fab .qa-fab-label { display: none; } .qa-fab { border-radius: 50%; width: 54px; height: 54px;
+  justify-content: center; padding: 0; } .qa-fab .qa-fab-plus { font-size: 26px; margin: 0; } }
 """
 
 
@@ -324,15 +352,59 @@ def sidebar(active: str, day: str, user: dict) -> str:
 <a class="signout-link" href="/logout">Sign out</a>"""
 
 
+def quick_assign_fab() -> str:
+    """A floating "Quick assign" button + popup for managers.
+
+    Type one plain-English line ("Suki: carrier report due Friday") and the
+    server parses it into a task — no external AI, no dependency. Submits as an
+    ordinary form POST so it works even if this little script doesn't run."""
+    return """
+<button type="button" class="qa-fab" id="qaFab" aria-label="Quick assign">
+  <span class="qa-fab-plus">+</span><span class="qa-fab-label">Quick assign</span>
+</button>
+<dialog class="qa-dialog" id="qaDialog">
+  <form method="post" action="/tasks" class="qa-form">
+    <input type="hidden" name="action" value="quickadd">
+    <div class="qa-head">
+      <div class="qa-title">Quick assign</div>
+      <button type="button" class="qa-x" id="qaClose" aria-label="Close">&times;</button>
+    </div>
+    <div class="qa-sub">Just type what you assigned — I'll turn it into a task.</div>
+    <textarea name="text" class="qa-input" rows="2" required
+      placeholder="e.g. Suki: carrier report due Friday"></textarea>
+    <div class="qa-examples">
+      Try: <span>&ldquo;Ask Suki to refresh the PEPCO report by Thursday&rdquo;</span> ·
+      <span>&ldquo;Operations: chase the carrier, tomorrow&rdquo;</span>
+    </div>
+    <div class="qa-actions"><button type="submit" class="qa-go">Create task &rarr;</button></div>
+  </form>
+</dialog>
+<script>
+(function(){
+  var fab=document.getElementById('qaFab'), dlg=document.getElementById('qaDialog');
+  if(!fab||!dlg) return;
+  var box=dlg.querySelector('.qa-input');
+  function open(){ try{dlg.showModal()}catch(e){dlg.setAttribute('open','')}
+    setTimeout(function(){ if(box) box.focus() },30); }
+  fab.addEventListener('click', open);
+  var x=document.getElementById('qaClose');
+  if(x) x.addEventListener('click', function(){ dlg.close() });
+  dlg.addEventListener('click', function(e){ if(e.target===dlg) dlg.close() });
+})();
+</script>
+"""
+
+
 def shell(title: str, active: str, day: str, body: str, extra_css: str = "",
           user: dict | None = None) -> str:
     scripts = ""
     if user:
         body_cls = ' class="role-manager"' if user.get("is_leader") else ' class="role-worker"'
+        fab = quick_assign_fab() if user.get("is_leader") else ""
         layout = (f'<div class="app"><aside class="sidebar">{sidebar(active, day, user)}'
                   f'</aside><main class="main"><div class="mainwrap">{body}'
                   f'<footer>MOOV Health Check · zero-dependency daily operations website</footer>'
-                  f'</div></main></div>')
+                  f'</div></main></div>{fab}')
         if user.get("is_root"):
             # Every page the head views quietly snapshots the whole desk into
             # this browser; the sign-in page and the empty dashboard offer a

@@ -705,3 +705,66 @@ def test_dashboard_report_from_updates(server):
     assert "wrapped it up" in body
     assert "System issue" in body and "portal was down" in body
     assert "in Teams" in body
+
+
+# ---------------------------------------------------------------------------
+# Quick-assign popup — one plain-English line becomes a task (no external AI)
+# ---------------------------------------------------------------------------
+
+def test_quick_assign_parser_reads_who_what_and_when():
+    from moov_health_check.tasks import parse_quick_assign
+    people = [{"name": "Suki", "group_id": "ops"},
+              {"name": "Derek Byrne", "group_id": "__root__"}]
+    tnames = {"ops": "Operations", "docs": "Documentation"}
+    mon = "2026-07-13"  # a Monday
+
+    p = parse_quick_assign("Suki: carrier report due Friday", people, tnames, mon)
+    assert p == {"title": "Carrier report", "assignee": "Suki",
+                 "team_id": "ops", "due_date": "2026-07-17"}
+
+    p = parse_quick_assign("I gave Suki the carrier report, due Thursday",
+                           people, tnames, mon)
+    assert p["title"] == "Carrier report" and p["assignee"] == "Suki"
+    assert p["due_date"] == "2026-07-16"
+
+    # A group name (not a person) routes the task to that group.
+    p = parse_quick_assign("Operations: chase the carrier tomorrow",
+                           people, tnames, mon)
+    assert p["team_id"] == "ops" and p["assignee"] == ""
+    assert p["title"] == "Chase the carrier" and p["due_date"] == "2026-07-14"
+
+    # First-name match + an explicit ISO date.
+    p = parse_quick_assign("Derek review the audit 2026-07-20", people, tnames, mon)
+    assert p["assignee"] == "Derek Byrne" and p["due_date"] == "2026-07-20"
+
+    # No date, no roster match — still yields a clean title.
+    p = parse_quick_assign("chase the carrier", people, tnames, mon)
+    assert p["title"] == "Chase the carrier"
+    assert p["assignee"] == "" and p["team_id"] == "" and p["due_date"] == ""
+
+
+def test_quick_assign_popup_creates_a_task_from_the_board(server):
+    m = head(server)
+    member(server, "t1", "Aki")
+
+    # One line -> a task, routed to Aki's group, with the parsed due date.
+    _, body = m.post("/tasks", {"action": "quickadd",
+                                "text": "Aki: refresh the manifest 2026-07-20"})
+    assert "Added" in body and "Aki" in body
+
+    _, board = m.get("/tasks")
+    assert "Refresh the manifest" in board
+    assert "Aki" in board and "2026-07-20" in board
+    # The floating popup is present for a manager and posts the quickadd action.
+    assert 'id="qaFab"' in board and 'value="quickadd"' in board
+
+    # Gibberish with no task in it is turned away kindly, nothing created.
+    _, body = m.post("/tasks", {"action": "quickadd", "text": "   "})
+    assert "Couldn" in body
+
+    # Members can't assign, and don't get the popup at all.
+    w = member(server, "t2", "Mo")
+    _, body = w.post("/tasks", {"action": "quickadd", "text": "Mo: do a thing"})
+    assert "leader can assign" in body
+    _, mepage = w.get("/me")
+    assert 'id="qaFab"' not in mepage

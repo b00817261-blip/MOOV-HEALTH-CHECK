@@ -12,6 +12,7 @@ Put the reports directory on a shared drive and the task list travels with it.
 from __future__ import annotations
 
 import json
+import re
 import threading
 import uuid
 from datetime import date as date_cls, datetime, timedelta, timezone
@@ -309,3 +310,121 @@ def pending_requests(tasks: list) -> list:
             if req.get("status") == "pending":
                 out.append((t, req))
     return out
+
+
+# -- quick-assign: turn one plain-English line into a task ------------------
+# The "quick assign" popup lets the boss type "Suki: carrier report due Friday"
+# instead of filling a form. This parser is deliberately small and rule-based
+# (no external AI, no dependency): it pulls out a due date, matches a known
+# person or group from the roster, and treats the rest as the task title.
+
+_WEEKDAYS = {
+    "monday": 0, "mon": 0, "tuesday": 1, "tue": 1, "tues": 1,
+    "wednesday": 2, "wed": 2, "weds": 2, "thursday": 3, "thu": 3,
+    "thur": 3, "thurs": 3, "friday": 4, "fri": 4, "saturday": 5, "sat": 5,
+    "sunday": 6, "sun": 6,
+}
+
+# Words that only glue a sentence together — stripped from the ends of a title
+# so "I gave Suki the carrier report" becomes "Carrier report".
+_FILLER = {
+    "i", "ive", "id", "gave", "give", "given", "giving", "assign", "assigned",
+    "ask", "asks", "asked", "tell", "told", "get", "gets", "have", "has", "had",
+    "to", "the", "a", "an", "for", "please", "pls", "kindly", "that", "this",
+    "do", "does", "should", "must", "need", "needs", "needed", "by", "due",
+    "on", "and", "with", "him", "her", "them", "their", "his", "make", "let",
+    "us", "can", "you", "we", "of",
+}
+
+
+def _cut(text: str, m: "re.Match") -> str:
+    return (text[:m.start()] + " " + text[m.end():])
+
+
+def parse_due(text: str, today: date_cls) -> tuple[str, str]:
+    """Pull a due date out of ``text``. Returns ``(iso_or_empty, leftover)``.
+
+    Understands ISO dates, "today"/"tonight"/"tomorrow", "in N days", and
+    weekday names (optionally after "by"/"due"/"on"/"next")."""
+    m = re.search(r"\b\d{4}-\d{2}-\d{2}\b", text)
+    if m:
+        try:
+            date_cls.fromisoformat(m.group(0))
+            return m.group(0), _cut(text, m)
+        except ValueError:
+            pass
+    m = re.search(r"\bin (\d{1,3}) days?\b", text, re.I)
+    if m:
+        return (today + timedelta(days=int(m.group(1)))).isoformat(), _cut(text, m)
+    m = re.search(r"\b(?:by |due |on )?(today|tonight|tomorrow|tmrw|tmr)\b",
+                  text, re.I)
+    if m:
+        word = m.group(1).lower()
+        d = today if word in ("today", "tonight") else today + timedelta(days=1)
+        return d.isoformat(), _cut(text, m)
+    names = "|".join(sorted(_WEEKDAYS, key=len, reverse=True))
+    m = re.search(r"\b(?:by |due |on |next )?(" + names + r")\b", text, re.I)
+    if m:
+        ahead = (_WEEKDAYS[m.group(1).lower()] - today.weekday()) % 7
+        if "next" in text[max(0, m.start() - 5):m.start()].lower() and ahead == 0:
+            ahead = 7
+        return (today + timedelta(days=ahead)).isoformat(), _cut(text, m)
+    return "", text
+
+
+def _clean_title(text: str) -> str:
+    text = text.replace(":", " ").replace(",", " ")
+    words = [w for w in re.split(r"\s+", text.strip()) if w]
+    while words and words[0].lower().strip(".,:;-'") in _FILLER:
+        words.pop(0)
+    while words and words[-1].lower().strip(".,:;-'") in _FILLER:
+        words.pop()
+    out = " ".join(words).strip(" .,:;-")
+    return (out[:1].upper() + out[1:]) if out else ""
+
+
+def parse_quick_assign(text: str, people: list, team_names: dict,
+                       today: str) -> dict:
+    """Turn a plain-English line into task fields.
+
+    ``people`` is a list of ``{name, group_id}`` (from the roster); ``team_names``
+    maps ``team_id -> display name``. Returns a dict with ``title``, ``assignee``,
+    ``team_id`` and ``due_date`` (any of which may be empty)."""
+    raw = " ".join((text or "").split())
+    try:
+        today_d = date_cls.fromisoformat(today)
+    except (ValueError, TypeError):
+        today_d = datetime.now(timezone.utc).date()
+    due, rest = parse_due(raw, today_d)
+
+    assignee = team_id = ""
+    # Match a known person first (longest name wins, so "Suki Tan" beats "Suki").
+    for p in sorted(people, key=lambda p: len(p.get("name", "")), reverse=True):
+        name = (p.get("name") or "").strip()
+        if not name:
+            continue
+        pat = r"\b" + re.escape(name) + r"\b"
+        if re.search(pat, rest, re.I):
+            assignee = name
+            team_id = p.get("group_id", "") or ""
+            rest = re.sub(pat, " ", rest, count=1, flags=re.I)
+            break
+        first = name.split()[0]
+        if len(first) >= 3 and re.search(r"\b" + re.escape(first) + r"\b", rest, re.I):
+            assignee = name
+            team_id = p.get("group_id", "") or ""
+            rest = re.sub(r"\b" + re.escape(first) + r"\b", " ", rest, count=1,
+                          flags=re.I)
+            break
+    # No person? Try to name a group instead ("Operations: refresh report").
+    if not assignee:
+        for tid, gname in sorted(team_names.items(),
+                                 key=lambda kv: len(kv[1] or ""), reverse=True):
+            if gname and re.search(r"\b" + re.escape(gname) + r"\b", rest, re.I):
+                team_id = tid
+                rest = re.sub(r"\b" + re.escape(gname) + r"\b", " ", rest,
+                              count=1, flags=re.I)
+                break
+
+    return {"title": _clean_title(rest), "assignee": assignee,
+            "team_id": team_id, "due_date": due}

@@ -75,6 +75,14 @@ def _today() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 
+def _pretty_due(iso: str) -> str:
+    """'2026-07-17' -> 'Fri 17 Jul' for friendly confirmations."""
+    try:
+        return date_cls.fromisoformat(iso).strftime("%a %-d %b")
+    except (ValueError, TypeError):
+        return iso
+
+
 # ---------------------------------------------------------------------------
 # Who is signed in — a cookie carrying group / name / leader-flag.
 #
@@ -808,6 +816,39 @@ def handle_task_action(state: AppState, form: dict, user: dict) -> tuple[bool, s
                 created_by=user.get("name", ""),
             )
             return True, f"Task added: {task['title']}"
+        if action == "quickadd":
+            # The quick-assign popup: one plain-English line ("Suki: carrier
+            # report due Friday") parsed into a task, no form to fill.
+            if not is_manager:
+                return False, "Only a group's leader can assign tasks."
+            groups = state.roster()
+            if user.get("is_root"):
+                tnames = {tid: g.get("team_name", tid) for tid, g in groups.items()}
+            else:
+                tnames = {tid: groups[tid].get("team_name", tid)
+                          for tid in scope if tid in groups}
+            people = [p for p in state.accounts.people()
+                      if user.get("is_root") or p.get("group_id") in scope]
+            parsed = tasks_mod.parse_quick_assign(
+                field("text"), people, tnames, _today())
+            if not parsed["title"]:
+                return False, ("Couldn't read a task there — try something like "
+                               "“Suki: carrier report due Friday”.")
+            team_id = parsed["team_id"]
+            if team_id and not (user.get("is_root") or team_id in scope):
+                team_id = ""
+            task = state.tasks.add(
+                title=parsed["title"], team_id=team_id,
+                assignee=parsed["assignee"], due_date=parsed["due_date"],
+                created_by=user.get("name", ""))
+            bits = [f"“{task['title']}”"]
+            if task["assignee"]:
+                bits.append(f"for {task['assignee']}")
+            if team_id:
+                bits.append(f"· {tnames.get(team_id, team_id)}")
+            if task["due_date"]:
+                bits.append(f"· due {_pretty_due(task['due_date'])}")
+            return True, "Added " + " ".join(bits)
         if action == "status":
             task = state.tasks.get(field("id"))
             if task is None:
