@@ -60,7 +60,7 @@ class AccountStore:
     def head_email(self) -> str | None:
         """The email of the registered head of the desk, if any."""
         for email, acct in self._load().items():
-            if acct.get("is_root"):
+            if isinstance(acct, dict) and acct.get("is_root"):
                 return email
         return None
 

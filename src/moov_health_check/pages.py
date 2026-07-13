@@ -1060,8 +1060,18 @@ def restore_widget(goto: str, center: bool = False) -> str:
     btn.textContent = 'Restore my desk →';
   }}
   btn.onclick = doRestore;
-  // The desk is empty and we hold a backup — restore straight away.
-  doRestore();
+  // Auto-restore at most ONCE per browser tab. If a backup can't fully
+  // repopulate the desk (e.g. it holds no head account), the login page would
+  // otherwise restore → reload → restore forever. This one-shot flag turns
+  // that infinite loop into a single attempt, then a manual "try again" button.
+  var tried = false;
+  try {{ tried = sessionStorage.getItem('moov_restore_tried') === '1' }} catch (e) {{}}
+  if (tried) {{
+    showManual('Automatic restore already ran — the desk still looks empty.');
+  }} else {{
+    try {{ sessionStorage.setItem('moov_restore_tried', '1') }} catch (e) {{}}
+    doRestore();
+  }}
 }})();
 </script>"""
 
