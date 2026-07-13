@@ -326,14 +326,26 @@ _WEEKDAYS = {
 }
 
 # Words that only glue a sentence together — stripped from the ends of a title
-# so "I gave Suki the carrier report" becomes "Carrier report".
+# so "Hi can you please ask Suki to refresh her report" becomes "Refresh her
+# report".
 _FILLER = {
     "i", "ive", "id", "gave", "give", "given", "giving", "assign", "assigned",
     "ask", "asks", "asked", "tell", "told", "get", "gets", "have", "has", "had",
     "to", "the", "a", "an", "for", "please", "pls", "kindly", "that", "this",
     "do", "does", "should", "must", "need", "needs", "needed", "by", "due",
     "on", "and", "with", "him", "her", "them", "their", "his", "make", "let",
-    "us", "can", "you", "we", "of",
+    "us", "can", "could", "would", "will", "you", "we", "of", "hi", "hello",
+    "hey", "yo", "so", "just", "wanna", "gonna", "someone", "somebody",
+}
+
+# When no roster name matches, the assignee is often named right after a cue
+# word ("ask Suki", "for Priya", "tell Mo") — but only if the next word is
+# plausibly a name and not one of these.
+_NAME_CUES = ("ask", "asked", "assign", "assigned", "tell", "told", "for",
+              "give", "gave", "get")
+_NOT_A_NAME = set(_FILLER) | set(_WEEKDAYS) | {
+    "team", "group", "everyone", "report", "it", "me", "one", "all", "today",
+    "tomorrow", "tonight", "back", "out", "up", "done", "over",
 }
 
 
@@ -425,6 +437,18 @@ def parse_quick_assign(text: str, people: list, team_names: dict,
                 rest = re.sub(r"\b" + re.escape(gname) + r"\b", " ", rest,
                               count=1, flags=re.I)
                 break
+
+    # Still nobody? The name is often right after a cue word ("ask Suki to…").
+    # Take it as the assignee even if they haven't registered yet — the caller
+    # can then nudge them to sign in so the task reaches them.
+    if not assignee and not team_id:
+        cues = "|".join(_NAME_CUES)
+        m = re.search(r"\b(?:" + cues + r")\s+([A-Za-z][A-Za-z'’-]{1,30})\b",
+                      rest, re.I)
+        if m and m.group(1).lower() not in _NOT_A_NAME:
+            token = m.group(1)
+            assignee = token[:1].upper() + token[1:]
+            rest = rest[:m.start(1)] + " " + rest[m.end(1):]
 
     return {"title": _clean_title(rest), "assignee": assignee,
             "team_id": team_id, "due_date": due}

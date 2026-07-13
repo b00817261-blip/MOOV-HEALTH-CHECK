@@ -742,6 +742,19 @@ def test_quick_assign_parser_reads_who_what_and_when():
     assert p["title"] == "Chase the carrier"
     assert p["assignee"] == "" and p["team_id"] == "" and p["due_date"] == ""
 
+    # A rambling, greeting-laden line with a name that ISN'T registered yet:
+    # the cue word ("ask") still hands it to that person, and the greeting is
+    # trimmed off the title.
+    p = parse_quick_assign("Hi can you please ask suki to refresh her report",
+                           [], tnames, mon)
+    assert p["assignee"] == "Suki"
+    assert p["title"] == "Refresh her report"
+
+    p = parse_quick_assign("tell Mo to file the customs docs by Friday",
+                           [], tnames, mon)
+    assert p["assignee"] == "Mo" and p["title"] == "File the customs docs"
+    assert p["due_date"] == "2026-07-17"
+
 
 def test_quick_assign_popup_creates_a_task_from_the_board(server):
     m = head(server)
@@ -757,6 +770,17 @@ def test_quick_assign_popup_creates_a_task_from_the_board(server):
     assert "Aki" in board and "2026-07-20" in board
     # The floating popup is present for a manager and posts the quickadd action.
     assert 'id="qaFab"' in board and 'value="quickadd"' in board
+
+    # A free-form line naming someone who hasn't registered still assigns to
+    # them — and the confirmation nudges the boss to invite them.
+    _, body = m.post("/tasks", {"action": "quickadd",
+                                "text": "please ask Priya to call the carrier"})
+    assert "Priya" in body and "Call the carrier" in body
+    assert "signed in yet" in body                 # "isn't signed in yet — invite…"
+
+    # Aki is registered, so assigning to her carries no invite nudge.
+    _, body = m.post("/tasks", {"action": "quickadd", "text": "Aki: tidy the logs"})
+    assert "Aki" in body and "signed in yet" not in body
 
     # Gibberish with no task in it is turned away kindly, nothing created.
     _, body = m.post("/tasks", {"action": "quickadd", "text": "   "})

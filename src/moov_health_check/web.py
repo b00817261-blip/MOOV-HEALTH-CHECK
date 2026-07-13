@@ -848,6 +848,16 @@ def handle_task_action(state: AppState, form: dict, user: dict) -> tuple[bool, s
                 bits.append(f"· {tnames.get(team_id, team_id)}")
             if task["due_date"]:
                 bits.append(f"· due {_pretty_due(task['due_date'])}")
+            # Tell the boss whether it will actually reach the person: an
+            # assigned task shows up on that person's own tasks once they've
+            # signed in, so flag anyone who hasn't registered yet.
+            if task["assignee"]:
+                known = any(p.get("name", "").strip().lower()
+                            == task["assignee"].lower()
+                            for p in state.accounts.people())
+                if not known:
+                    bits.append(f"· ⚠ {task['assignee']} isn't signed in yet — "
+                                "invite them so it reaches them")
             return True, "Added " + " ".join(bits)
         if action == "status":
             task = state.tasks.get(field("id"))
