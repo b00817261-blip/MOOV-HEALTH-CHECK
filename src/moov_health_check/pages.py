@@ -101,19 +101,35 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var
   border-radius: 10px; background: var(--orange); color: #fff;
   font-size: 11px; font-weight: 800; line-height: 18px; text-align: center; }
 .snav-link.active .navbadge { background: #fff; color: var(--navy); }
-@media (max-width: 800px) {
-  .app { flex-direction: column; }
-  .sidebar { width: auto; height: auto; position: static; border-right: 0;
-    border-bottom: 1px solid var(--line); }
-  .snav { flex-direction: row; flex-wrap: wrap; }
+/* Mobile: a fixed top bar (brand + sign out) and a native-style bottom tab bar */
+@media (max-width: 760px) {
+  .app { display: block; }
+  .sidebar { display: contents; }
+  .brand-row { position: fixed; top: 0; left: 0; right: 0; z-index: 50; margin: 0;
+    padding: 9px 16px; background: var(--card); border-bottom: 1px solid var(--line);
+    box-shadow: 0 2px 10px rgba(16,49,79,.05); }
+  .brand-title, .side-rule, .side-spacer, .role-pill { display: none; }
+  .signout-link { position: fixed; top: 13px; right: 12px; z-index: 51; padding: 5px 12px;
+    border: 1px solid var(--line); border-radius: 9px; background: var(--card); }
+  .snav { position: fixed; bottom: 0; left: 0; right: 0; z-index: 50; flex-direction: row;
+    justify-content: space-around; gap: 0; padding: 6px 2px calc(6px + env(safe-area-inset-bottom));
+    background: var(--card); border-top: 1px solid var(--line);
+    box-shadow: 0 -2px 14px rgba(16,49,79,.07); }
+  .snav-link { flex-direction: column; gap: 3px; padding: 6px 4px; font-size: 10px;
+    font-weight: 700; border-radius: 12px; flex: 1; text-align: center; }
+  .snav-link.active { background: transparent; color: var(--navy); }
+  .snav-link .nico { width: 22px; height: 22px; }
+  .snav-link .lbl { flex: none; font-size: 10px; }
   .snav-link .chev { display: none; }
-  .side-spacer { display: none; }
-  .mainwrap { padding: 22px 18px 56px; }
+  .snav-link .navbadge { position: absolute; margin-top: -6px; margin-left: 12px; }
+  .snav-link { position: relative; }
+  .mainwrap { padding: 66px 16px 90px; }
 }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px;
   margin-bottom: 16px; box-shadow: 0 1px 2px rgba(16,49,79,.05); }
 .grid2 { display: grid; grid-template-columns: 1.5fr 1fr; gap: 16px; }
-@media (max-width: 720px) { .grid2 { grid-template-columns: 1fr; } }
+.login-choice { grid-template-columns: 1fr 1fr; }
+@media (max-width: 720px) { .grid2, .login-choice { grid-template-columns: 1fr; } }
 .card h3 { margin: 0 0 12px; font-size: 15px; color: var(--ink); }
 .bar-row { display: grid; grid-template-columns: 110px 1fr 30px; align-items: center; gap: 12px; margin: 9px 0; font-size: 13px; }
 .bar-row .lbl { color: var(--ink2); }
@@ -178,6 +194,46 @@ footer { margin-top: 40px; color: var(--muted); font-size: 12px; text-align: cen
 .cta { display: inline-block; padding: 12px 20px; background: var(--navy); color: #fff !important;
   border-radius: 11px; font-weight: 700; margin-top: 8px; }
 .cta:hover { background: var(--navy-d); }
+/* --- Interactivity: transitions everywhere, press feedback, gentle hover lift --- */
+button, .hbtn, .cta, .filters a, .snav-link, .signout-btn, .signout-link,
+.optchip, .gcard, details summary { transition: background .16s ease, color .16s ease,
+  border-color .16s ease, box-shadow .18s ease, transform .12s ease; }
+button:active, .hbtn:active, .cta:active, .signout-btn:active,
+details summary:active { transform: translateY(1px); }
+.card { transition: box-shadow .2s ease, transform .2s ease; }
+.statcard, .metric { transition: box-shadow .2s ease, transform .2s ease; }
+.statcard:hover, .metric:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(16,49,79,.09); }
+.att-row .hbtn:hover, .filters a:hover { transform: translateY(-1px); }
+.uc-avatar, .gavatar, .avatar { transition: transform .2s ease; }
+/* --- Load motion (respecting reduced-motion) --- */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes moovRise { from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: none; } }
+  @keyframes moovFade { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes moovGrow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+  @keyframes moovPop { 0% { transform: scale(.9); opacity: 0; }
+    60% { transform: scale(1.04); } 100% { transform: scale(1); opacity: 1; } }
+  .welcome-hero, .statcard, .metric, .card, .gnode, .att-row, .teamtable tbody tr {
+    animation: moovRise .5s cubic-bezier(.2,.7,.3,1) both; }
+  h1, .eyebrow, .dtop, .cal-head { animation: moovFade .5s ease both; }
+  .statgrid .statcard:nth-child(2) { animation-delay: .05s; }
+  .statgrid .statcard:nth-child(3) { animation-delay: .10s; }
+  .statgrid .statcard:nth-child(4) { animation-delay: .15s; }
+  .metric4 .metric:nth-child(1) { animation-delay: .06s; }
+  .metric4 .metric:nth-child(2) { animation-delay: .12s; }
+  .metric4 .metric:nth-child(3) { animation-delay: .18s; }
+  .metric4 .metric:nth-child(4) { animation-delay: .24s; }
+  .teamtable tbody tr:nth-child(2) { animation-delay: .04s; }
+  .teamtable tbody tr:nth-child(3) { animation-delay: .08s; }
+  .teamtable tbody tr:nth-child(4) { animation-delay: .12s; }
+  .teamtable tbody tr:nth-child(5) { animation-delay: .16s; }
+  .teamtable tbody tr:nth-child(6) { animation-delay: .20s; }
+  .tt-fill, .pfill, .bar-fill { transform-origin: left;
+    animation: moovGrow .8s cubic-bezier(.2,.7,.3,1) both; }
+  .donut circle:last-child { animation: moovFade .8s ease both; }
+  .navbadge, .gcount, .today-badge { animation: moovPop .45s cubic-bezier(.2,.8,.3,1) both; }
+  .brand-badge { animation: moovPop .5s cubic-bezier(.2,.8,.3,1) both; }
+}
 """
 
 
@@ -300,7 +356,30 @@ def shell(title: str, active: str, day: str, body: str, extra_css: str = "",
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{esc(title)} — MOOV</title>
 <style>{BASE_CSS}{extra_css}</style></head>
-<body{body_cls}>{layout}{scripts}</body></html>"""
+<body{body_cls}>{layout}{scripts}{_MOTION_JS}</body></html>"""
+
+
+# Count the big numbers up from zero on load — pure JS, degrades to the static
+# number if disabled, and stays still for reduced-motion users.
+_MOTION_JS = """<script>
+(function(){
+  if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  var els = document.querySelectorAll('.sc-num, .m-num');
+  els.forEach(function(el){
+    var target = parseInt((el.textContent||'').replace(/[^0-9-]/g,''), 10);
+    if (isNaN(target) || target < 0) return;
+    var start = null, dur = 650;
+    function step(ts){
+      if (start === null) start = ts;
+      var p = Math.min((ts - start) / dur, 1);
+      el.textContent = Math.round(target * (1 - Math.pow(1 - p, 3)));
+      if (p < 1) requestAnimationFrame(step); else el.textContent = target;
+    }
+    el.textContent = '0';
+    requestAnimationFrame(step);
+  });
+})();
+</script>"""
 
 
 def status_chip(status: str) -> str:
@@ -769,7 +848,7 @@ def login_page(head_exists: bool, error: str = "") -> str:
   <div class="login-rule"></div>
 </div>
 {error_html}
-<div class="grid2" style="max-width:860px;margin:0 auto;grid-template-columns:1fr 1fr">
+<div class="grid2 login-choice" style="max-width:860px;margin:0 auto">
   <div class="card login-card manager">
     <h3>I'm the head of the desk</h3>
     <div class="desc">{head_line} You'll see everything, create groups,
