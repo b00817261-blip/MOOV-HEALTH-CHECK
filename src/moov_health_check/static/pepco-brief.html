@@ -9,22 +9,26 @@
 <style>
   :root{
     color-scheme: light dark;
-    /* warm-cool ops neutrals */
-    --paper:#F4F3EE;
-    --surface:#FBFAF6;
-    --ink:#17242E;
-    --ink-soft:#3A4650;
-    --muted:#6A757E;
-    --line:#E1E0D8;
-    --line-strong:#C9C8BF;
-    /* structural accent (never used for status) */
-    --petrol:#2B6B7C;
-    --petrol-soft:#DDE8EB;
-    /* reserved status hues */
+    /* neutrals — biased toward the MOOV blue */
+    --paper:#F4F6F8;
+    --surface:#FFFFFF;
+    --ink:#0E2A3B;
+    --ink-soft:#3C5567;
+    --muted:#69808F;
+    --line:#DCE3E8;
+    --line-strong:#C3CED6;
+    /* MOOV brand */
+    --band:#0E557F;          /* header band — constant in both themes */
+    --brand:#0E557F;         /* structural accent / magnitude bars */
+    --brand-tint:#8FBBD6;
+    --brand-soft:#DBEAF3;
+    --accent:#E85A24;        /* MOOV orange — the signature pop */
+    --accent-soft:#F9E1D4;
+    /* reserved status hues (kept distinct from the brand) */
     --red:#BE3F2C;      --red-soft:#F3DED9;
     --amber:#A97112;    --amber-soft:#F1E5CE;
     --green:#2F7354;    --green-soft:#D9E8E0;
-    --chip:#ECEBE3;
+    --chip:#EAEFF3;
 
     --mono:ui-monospace,"SF Mono","SFMono-Regular","Cascadia Mono",Menlo,Consolas,"Liberation Mono",monospace;
     --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
@@ -33,32 +37,38 @@
   }
   @media (prefers-color-scheme: dark){
     :root{
-      --paper:#101820;
-      --surface:#16212B;
-      --ink:#EDEEE8;
-      --ink-soft:#C3CBD1;
-      --muted:#8593A0;
-      --line:#233240;
-      --line-strong:#2F4150;
-      --petrol:#69B4C6;
-      --petrol-soft:#1B3640;
+      --paper:#0C1620;
+      --surface:#132231;
+      --ink:#EAF0F4;
+      --ink-soft:#B9C7D1;
+      --muted:#8496A3;
+      --line:#22384A;
+      --line-strong:#33506A;
+      --band:#0E557F;
+      --brand:#4B9BCB;
+      --brand-tint:#8FBBD6;
+      --brand-soft:#153245;
+      --accent:#F27A45;
+      --accent-soft:#3A2317;
       --red:#E1705C;      --red-soft:#3A211C;
       --amber:#D6A24B;    --amber-soft:#372B14;
       --green:#5FB088;    --green-soft:#173026;
-      --chip:#1E2C37;
+      --chip:#1B2B3A;
     }
   }
   :root[data-theme="light"]{
-    --paper:#F4F3EE;--surface:#FBFAF6;--ink:#17242E;--ink-soft:#3A4650;--muted:#6A757E;
-    --line:#E1E0D8;--line-strong:#C9C8BF;--petrol:#2B6B7C;--petrol-soft:#DDE8EB;
+    --paper:#F4F6F8;--surface:#FFFFFF;--ink:#0E2A3B;--ink-soft:#3C5567;--muted:#69808F;
+    --line:#DCE3E8;--line-strong:#C3CED6;--band:#0E557F;--brand:#0E557F;--brand-tint:#8FBBD6;
+    --brand-soft:#DBEAF3;--accent:#E85A24;--accent-soft:#F9E1D4;
     --red:#BE3F2C;--red-soft:#F3DED9;--amber:#A97112;--amber-soft:#F1E5CE;
-    --green:#2F7354;--green-soft:#D9E8E0;--chip:#ECEBE3;
+    --green:#2F7354;--green-soft:#D9E8E0;--chip:#EAEFF3;
   }
   :root[data-theme="dark"]{
-    --paper:#101820;--surface:#16212B;--ink:#EDEEE8;--ink-soft:#C3CBD1;--muted:#8593A0;
-    --line:#233240;--line-strong:#2F4150;--petrol:#69B4C6;--petrol-soft:#1B3640;
+    --paper:#0C1620;--surface:#132231;--ink:#EAF0F4;--ink-soft:#B9C7D1;--muted:#8496A3;
+    --line:#22384A;--line-strong:#33506A;--band:#0E557F;--brand:#4B9BCB;--brand-tint:#8FBBD6;
+    --brand-soft:#153245;--accent:#F27A45;--accent-soft:#3A2317;
     --red:#E1705C;--red-soft:#3A211C;--amber:#D6A24B;--amber-soft:#372B14;
-    --green:#5FB088;--green-soft:#173026;--chip:#1E2C37;
+    --green:#5FB088;--green-soft:#173026;--chip:#1B2B3A;
   }
 
   *{box-sizing:border-box}
@@ -67,9 +77,9 @@
   body{
     margin:0;background:var(--paper);color:var(--ink);
     font-family:var(--sans);font-size:15px;line-height:1.58;
-    -webkit-font-smoothing:antialiased;padding:0 20px 72px;
+    -webkit-font-smoothing:antialiased;padding:0 0 72px;
   }
-  .sheet{max-width:var(--maxw);margin:0 auto}
+  .sheet{max-width:var(--maxw);margin:0 auto;padding:0 20px}
   .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
   .num{font-variant-numeric:tabular-nums}
 
@@ -77,36 +87,39 @@
   .themebtn{
     position:fixed;top:14px;right:14px;z-index:10;
     font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.08em;
-    color:var(--muted);background:var(--surface);border:1px solid var(--line);
-    border-radius:100px;padding:6px 12px;cursor:pointer;line-height:1;
+    color:#fff;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.35);
+    border-radius:100px;padding:6px 12px;cursor:pointer;line-height:1;backdrop-filter:blur(4px);
   }
-  .themebtn:hover{color:var(--ink);border-color:var(--line-strong)}
+  .themebtn:hover{background:rgba(255,255,255,.24)}
 
-  /* ---------- masthead ---------- */
-  .mast{
+  /* ---------- masthead (MOOV brand band) ---------- */
+  .mast{background:var(--band);border-bottom:3px solid var(--accent)}
+  .mast-inner{
+    max-width:var(--maxw);margin:0 auto;padding:26px 20px 24px;
     display:flex;justify-content:space-between;align-items:flex-end;gap:20px;flex-wrap:wrap;
-    padding:40px 0 16px;border-bottom:2px solid var(--ink);
   }
-  .mast .brand{display:flex;flex-direction:column;gap:6px}
-  .mast .kicker{
+  .brand{display:flex;align-items:center;gap:15px}
+  .logo{width:40px;height:44px;flex:none}
+  .brandtext{display:flex;flex-direction:column;gap:7px}
+  .kicker{
     font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.22em;
-    text-transform:uppercase;color:var(--petrol);
+    text-transform:uppercase;color:rgba(255,255,255,.7);
   }
   .mast h1{
     margin:0;font-size:clamp(25px,5.4vw,36px);font-weight:800;line-height:1;
-    letter-spacing:-.015em;text-wrap:balance;
+    letter-spacing:-.015em;text-wrap:balance;color:#fff;
   }
-  .mast h1 span{color:var(--muted);font-weight:600}
+  .mast h1 span{color:var(--brand-tint);font-weight:600}
   .readout{
-    font-family:var(--mono);font-size:11.5px;line-height:1.85;color:var(--muted);
+    font-family:var(--mono);font-size:11.5px;line-height:1.85;color:rgba(255,255,255,.68);
     text-align:right;white-space:nowrap;
   }
-  .readout b{color:var(--ink);font-weight:600;letter-spacing:.02em}
+  .readout b{color:#fff;font-weight:600;letter-spacing:.02em}
 
   /* ---------- health gauge ---------- */
   .health{
     display:grid;grid-template-columns:auto 1fr;gap:28px;align-items:center;
-    padding:26px 0 24px;border-bottom:1px solid var(--line);
+    padding:28px 0 24px;border-bottom:1px solid var(--line);
   }
   .health .figure{display:flex;flex-direction:column;gap:2px;min-width:132px}
   .health .pct{
@@ -214,17 +227,17 @@
   .bar{display:grid;grid-template-columns:118px 1fr 44px;gap:12px;align-items:center;font-size:12.5px}
   .bar .lab{font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.03em}
   .bar .meter{height:9px;border-radius:100px;background:var(--chip);overflow:hidden}
-  .bar .meter i{display:block;height:100%;border-radius:100px;background:var(--petrol)}
+  .bar .meter i{display:block;height:100%;border-radius:100px;background:var(--brand)}
   .bar .val{font-family:var(--mono);font-size:11.5px;font-weight:600;color:var(--ink);text-align:right;font-variant-numeric:tabular-nums}
   .share{
     display:flex;align-items:center;gap:12px;margin:10px 0 2px;
-    padding:12px 14px;border-radius:9px;background:var(--petrol-soft);
+    padding:12px 14px;border-radius:9px;background:var(--brand-soft);
   }
-  .share .meter{flex:1;height:9px;border-radius:100px;background:rgba(23,36,46,.12);overflow:hidden}
+  .share .meter{flex:1;height:9px;border-radius:100px;background:rgba(14,42,59,.14);overflow:hidden}
   @media (prefers-color-scheme: dark){.share .meter{background:rgba(255,255,255,.14)}}
-  :root[data-theme="light"] .share .meter{background:rgba(23,36,46,.12)}
+  :root[data-theme="light"] .share .meter{background:rgba(14,42,59,.14)}
   :root[data-theme="dark"] .share .meter{background:rgba(255,255,255,.14)}
-  .share .meter i{display:block;height:100%;background:var(--petrol);border-radius:100px}
+  .share .meter i{display:block;height:100%;background:var(--brand);border-radius:100px}
   .share .cap{font-family:var(--mono);font-size:11.5px;font-weight:600;color:var(--ink);white-space:nowrap}
 
   /* ---------- clear / no-problem ---------- */
@@ -237,14 +250,14 @@
 
   /* ---------- footer ---------- */
   footer{
-    margin-top:44px;padding-top:16px;border-top:2px solid var(--ink);
+    margin-top:44px;padding-top:16px;border-top:3px solid var(--band);
     font-family:var(--mono);font-size:11px;line-height:1.95;color:var(--muted);
   }
   footer .frow{display:flex;gap:10px;margin-bottom:6px}
   footer .frow .lead{color:var(--ink);font-weight:600;letter-spacing:.08em;flex:none}
   footer b{color:var(--ink)}
 
-  a:focus-visible,button:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--petrol);outline-offset:3px;border-radius:4px}
+  a:focus-visible,button:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
 
   @media (max-width:560px){
     .health{grid-template-columns:1fr;gap:18px}
@@ -256,20 +269,30 @@
 </head>
 <body>
 <button class="themebtn" id="themebtn" type="button" aria-label="Toggle light or dark theme">◐ Theme</button>
-<div class="sheet">
 
-  <!-- masthead -->
-  <header class="mast">
+<!-- masthead (MOOV brand band) -->
+<header class="mast">
+  <div class="mast-inner">
     <div class="brand">
-      <div class="kicker">MOOV · Delivery Ops</div>
-      <h1>Morning Brief <span>/ Pepco</span></h1>
+      <svg class="logo" width="40" height="44" viewBox="0 0 40 44" fill="none" aria-hidden="true">
+        <path d="M11 8 H29 L37 21 L29 34 H11 L3 21 Z" stroke="#fff" stroke-width="2.4" stroke-linejoin="round"/>
+        <path d="M13 29 V15 L20 22 L27 15 V29" stroke="#fff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+        <path d="M20 15.5 L24.5 22.5 H15.5 Z" fill="#E85A24"/>
+      </svg>
+      <div class="brandtext">
+        <div class="kicker">MOOV · Delivery Ops</div>
+        <h1>Morning Brief <span>/ Pepco</span></h1>
+      </div>
     </div>
     <div class="readout">
       <b>THU 16 JUL 2026</b><br>
       refresh 08:30 · UTC+1<br>
       window · last 7 days
     </div>
-  </header>
+  </div>
+</header>
+
+<div class="sheet">
 
   <!-- health gauge -->
   <section class="health" aria-label="On-time delivery health">
