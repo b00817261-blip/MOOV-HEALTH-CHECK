@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="MOOV delivery-ops morning brief for Pepco — on-time health, action items, and owners.">
+<title>MOOV Morning Brief — Pepco — 16 Jul 2026</title>
+<style>
+  :root{
+    color-scheme: light dark;
+    /* warm-cool ops neutrals */
+    --paper:#F4F3EE;
+    --surface:#FBFAF6;
+    --ink:#17242E;
+    --ink-soft:#3A4650;
+    --muted:#6A757E;
+    --line:#E1E0D8;
+    --line-strong:#C9C8BF;
+    /* structural accent (never used for status) */
+    --petrol:#2B6B7C;
+    --petrol-soft:#DDE8EB;
+    /* reserved status hues */
+    --red:#BE3F2C;      --red-soft:#F3DED9;
+    --amber:#A97112;    --amber-soft:#F1E5CE;
+    --green:#2F7354;    --green-soft:#D9E8E0;
+    --chip:#ECEBE3;
+
+    --mono:ui-monospace,"SF Mono","SFMono-Regular","Cascadia Mono",Menlo,Consolas,"Liberation Mono",monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+
+    --maxw:740px;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --paper:#101820;
+      --surface:#16212B;
+      --ink:#EDEEE8;
+      --ink-soft:#C3CBD1;
+      --muted:#8593A0;
+      --line:#233240;
+      --line-strong:#2F4150;
+      --petrol:#69B4C6;
+      --petrol-soft:#1B3640;
+      --red:#E1705C;      --red-soft:#3A211C;
+      --amber:#D6A24B;    --amber-soft:#372B14;
+      --green:#5FB088;    --green-soft:#173026;
+      --chip:#1E2C37;
+    }
+  }
+  :root[data-theme="light"]{
+    --paper:#F4F3EE;--surface:#FBFAF6;--ink:#17242E;--ink-soft:#3A4650;--muted:#6A757E;
+    --line:#E1E0D8;--line-strong:#C9C8BF;--petrol:#2B6B7C;--petrol-soft:#DDE8EB;
+    --red:#BE3F2C;--red-soft:#F3DED9;--amber:#A97112;--amber-soft:#F1E5CE;
+    --green:#2F7354;--green-soft:#D9E8E0;--chip:#ECEBE3;
+  }
+  :root[data-theme="dark"]{
+    --paper:#101820;--surface:#16212B;--ink:#EDEEE8;--ink-soft:#C3CBD1;--muted:#8593A0;
+    --line:#233240;--line-strong:#2F4150;--petrol:#69B4C6;--petrol-soft:#1B3640;
+    --red:#E1705C;--red-soft:#3A211C;--amber:#D6A24B;--amber-soft:#372B14;
+    --green:#5FB088;--green-soft:#173026;--chip:#1E2C37;
+  }
+
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  @media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+  body{
+    margin:0;background:var(--paper);color:var(--ink);
+    font-family:var(--sans);font-size:15px;line-height:1.58;
+    -webkit-font-smoothing:antialiased;padding:0 20px 72px;
+  }
+  .sheet{max-width:var(--maxw);margin:0 auto}
+  .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .num{font-variant-numeric:tabular-nums}
+
+  /* ---------- theme toggle ---------- */
+  .themebtn{
+    position:fixed;top:14px;right:14px;z-index:10;
+    font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.08em;
+    color:var(--muted);background:var(--surface);border:1px solid var(--line);
+    border-radius:100px;padding:6px 12px;cursor:pointer;line-height:1;
+  }
+  .themebtn:hover{color:var(--ink);border-color:var(--line-strong)}
+
+  /* ---------- masthead ---------- */
+  .mast{
+    display:flex;justify-content:space-between;align-items:flex-end;gap:20px;flex-wrap:wrap;
+    padding:40px 0 16px;border-bottom:2px solid var(--ink);
+  }
+  .mast .brand{display:flex;flex-direction:column;gap:6px}
+  .mast .kicker{
+    font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.22em;
+    text-transform:uppercase;color:var(--petrol);
+  }
+  .mast h1{
+    margin:0;font-size:clamp(25px,5.4vw,36px);font-weight:800;line-height:1;
+    letter-spacing:-.015em;text-wrap:balance;
+  }
+  .mast h1 span{color:var(--muted);font-weight:600}
+  .readout{
+    font-family:var(--mono);font-size:11.5px;line-height:1.85;color:var(--muted);
+    text-align:right;white-space:nowrap;
+  }
+  .readout b{color:var(--ink);font-weight:600;letter-spacing:.02em}
+
+  /* ---------- health gauge ---------- */
+  .health{
+    display:grid;grid-template-columns:auto 1fr;gap:28px;align-items:center;
+    padding:26px 0 24px;border-bottom:1px solid var(--line);
+  }
+  .health .figure{display:flex;flex-direction:column;gap:2px;min-width:132px}
+  .health .pct{
+    font-family:var(--mono);font-size:46px;font-weight:600;line-height:.95;
+    letter-spacing:-.02em;color:var(--green);font-variant-numeric:tabular-nums;
+  }
+  .health .figlabel{
+    font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--muted);
+  }
+  .health .body{display:flex;flex-direction:column;gap:12px}
+  .verdict{font-size:15px;line-height:1.5}
+  .verdict b{font-weight:600}
+  .delta{
+    display:inline-flex;align-items:center;gap:5px;align-self:flex-start;
+    font-family:var(--mono);font-size:11.5px;font-weight:600;color:var(--green);
+    background:var(--green-soft);border-radius:100px;padding:3px 10px;
+  }
+  /* gauge track */
+  .gauge{position:relative;margin-top:2px}
+  .gauge .track{
+    position:relative;height:12px;border-radius:100px;background:var(--chip);
+    overflow:hidden;border:1px solid var(--line);
+  }
+  .gauge .fill{
+    position:absolute;inset:0 auto 0 0;width:84.6%;
+    background:var(--green);border-radius:100px;
+    transform-origin:left;animation:grow .9s cubic-bezier(.22,1,.36,1) both;
+  }
+  @keyframes grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+  @media (prefers-reduced-motion: reduce){.gauge .fill{animation:none}}
+  .gauge .baseline{
+    position:absolute;top:-4px;bottom:-4px;left:79.7%;width:2px;
+    background:var(--ink);border-radius:2px;
+  }
+  .gauge .scale{
+    display:flex;justify-content:space-between;margin-top:7px;
+    font-family:var(--mono);font-size:10.5px;color:var(--muted);
+  }
+  .gauge .basemark{color:var(--ink);font-weight:600}
+
+  /* ---------- definition strip ---------- */
+  .defn{
+    font-size:13px;line-height:1.6;color:var(--muted);
+    padding:16px 0;border-bottom:1px solid var(--line);
+  }
+  .defn b{color:var(--ink);font-weight:600}
+  .defn .flag{
+    display:inline-flex;gap:6px;margin-top:8px;padding:8px 12px;border-radius:8px;
+    background:var(--amber-soft);color:var(--amber);font-size:12.5px;font-weight:500;line-height:1.5;
+  }
+  .defn .flag::before{content:"PENDING";font-family:var(--mono);font-weight:600;letter-spacing:.08em;font-size:10.5px;padding-top:1px}
+
+  /* ---------- section labels ---------- */
+  .seclabel{
+    display:flex;align-items:center;gap:10px;margin:36px 0 4px;
+    font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--muted);
+  }
+  .seclabel .dot{width:8px;height:8px;border-radius:50%;flex:none}
+  .seclabel .count{
+    margin-left:auto;color:var(--muted);font-weight:600;letter-spacing:.08em;
+  }
+  .sec-red .dot{background:var(--red)}
+  .sec-amber .dot{background:var(--amber)}
+  .sec-green .dot{background:var(--green)}
+
+  /* ---------- item cards ---------- */
+  .item{
+    position:relative;margin-top:14px;padding:20px 22px 20px 24px;
+    background:var(--surface);border:1px solid var(--line);border-radius:12px;
+    overflow:hidden;
+  }
+  .item::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--amber)}
+  .item.hot::before{background:var(--red)}
+  .item .tag{
+    display:inline-block;font-family:var(--mono);font-size:10.5px;font-weight:600;
+    letter-spacing:.12em;color:var(--amber);margin-bottom:8px;
+  }
+  .item.hot .tag{color:var(--red)}
+  .item h2{
+    margin:0 0 14px;font-size:17px;font-weight:700;line-height:1.32;
+    letter-spacing:-.01em;text-wrap:balance;
+  }
+  .row{
+    display:grid;grid-template-columns:72px 1fr;gap:14px;
+    padding:9px 0;border-top:1px solid var(--line);
+  }
+  .row:first-of-type{border-top:none;padding-top:0}
+  .row .k{
+    font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.11em;
+    text-transform:uppercase;color:var(--muted);padding-top:3px;
+  }
+  .row .v{font-size:14px;line-height:1.55;color:var(--ink-soft)}
+  .row.action .v{color:var(--ink)}
+  .v .stat{font-family:var(--mono);font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums}
+  .owner{
+    display:inline-block;font-family:var(--mono);font-size:10.5px;font-weight:600;
+    letter-spacing:.06em;background:var(--chip);border:1px solid var(--line-strong);
+    color:var(--ink);border-radius:6px;padding:3px 9px;margin-left:2px;white-space:nowrap;
+  }
+
+  /* ---------- inline mini bars ---------- */
+  .bars{margin:12px 0 2px;display:flex;flex-direction:column;gap:8px}
+  .bar{display:grid;grid-template-columns:118px 1fr 44px;gap:12px;align-items:center;font-size:12.5px}
+  .bar .lab{font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.03em}
+  .bar .meter{height:9px;border-radius:100px;background:var(--chip);overflow:hidden}
+  .bar .meter i{display:block;height:100%;border-radius:100px;background:var(--petrol)}
+  .bar .val{font-family:var(--mono);font-size:11.5px;font-weight:600;color:var(--ink);text-align:right;font-variant-numeric:tabular-nums}
+  .share{
+    display:flex;align-items:center;gap:12px;margin:10px 0 2px;
+    padding:12px 14px;border-radius:9px;background:var(--petrol-soft);
+  }
+  .share .meter{flex:1;height:9px;border-radius:100px;background:rgba(23,36,46,.12);overflow:hidden}
+  @media (prefers-color-scheme: dark){.share .meter{background:rgba(255,255,255,.14)}}
+  :root[data-theme="light"] .share .meter{background:rgba(23,36,46,.12)}
+  :root[data-theme="dark"] .share .meter{background:rgba(255,255,255,.14)}
+  .share .meter i{display:block;height:100%;background:var(--petrol);border-radius:100px}
+  .share .cap{font-family:var(--mono);font-size:11.5px;font-weight:600;color:var(--ink);white-space:nowrap}
+
+  /* ---------- clear / no-problem ---------- */
+  .clear{
+    position:relative;margin-top:14px;padding:16px 20px 16px 22px;
+    background:var(--green-soft);border-radius:12px;font-size:14px;color:var(--ink-soft);
+  }
+  .clear::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;border-radius:12px 0 0 12px;background:var(--green)}
+  .clear b{color:var(--ink);font-weight:600}
+
+  /* ---------- footer ---------- */
+  footer{
+    margin-top:44px;padding-top:16px;border-top:2px solid var(--ink);
+    font-family:var(--mono);font-size:11px;line-height:1.95;color:var(--muted);
+  }
+  footer .frow{display:flex;gap:10px;margin-bottom:6px}
+  footer .frow .lead{color:var(--ink);font-weight:600;letter-spacing:.08em;flex:none}
+  footer b{color:var(--ink)}
+
+  a:focus-visible,button:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--petrol);outline-offset:3px;border-radius:4px}
+
+  @media (max-width:560px){
+    .health{grid-template-columns:1fr;gap:18px}
+    .row{grid-template-columns:1fr;gap:3px}
+    .row .k{padding-top:0}
+    .bar{grid-template-columns:92px 1fr 40px}
+  }
+</style>
+</head>
+<body>
+<button class="themebtn" id="themebtn" type="button" aria-label="Toggle light or dark theme">◐ Theme</button>
+<div class="sheet">
+
+  <!-- masthead -->
+  <header class="mast">
+    <div class="brand">
+      <div class="kicker">MOOV · Delivery Ops</div>
+      <h1>Morning Brief <span>/ Pepco</span></h1>
+    </div>
+    <div class="readout">
+      <b>THU 16 JUL 2026</b><br>
+      refresh 08:30 · UTC+1<br>
+      window · last 7 days
+    </div>
+  </header>
+
+  <!-- health gauge -->
+  <section class="health" aria-label="On-time delivery health">
+    <div class="figure">
+      <div class="pct num">84.6%</div>
+      <div class="figlabel">On-time · yesterday</div>
+    </div>
+    <div class="body">
+      <p class="verdict"><b>On-time is healthy and improving.</b> Arrivals ran above the 4-week baseline of 79.7%. No delivery-rate breach today — the two items below are upstream and land in 1–2 weeks.</p>
+      <div class="gauge" role="img" aria-label="On-time 84.6 percent, above the 4-week baseline of 79.7 percent">
+        <div class="track"><div class="fill"></div><div class="baseline"></div></div>
+        <div class="scale">
+          <span>0</span>
+          <span class="basemark">baseline 79.7</span>
+          <span>100</span>
+        </div>
+      </div>
+      <span class="delta">▲ +4.9 pts vs baseline</span>
+    </div>
+  </section>
+
+  <!-- definition -->
+  <p class="defn">
+    <b>What 84.6% counts:</b> share of Pepco orders arriving at a DC yesterday that landed on or before their planned handover date, order-level, cancelled orders excluded. Source — Delivery Performance, “Actual vs Planned.”
+    <br><span class="flag">Early arrivals currently count as on-time — awaiting your call on whether early should count.</span>
+  </p>
+
+  <!-- NEEDS ATTENTION -->
+  <div class="seclabel sec-red"><span class="dot"></span>Needs attention <span class="count">2 items · act this week</span></div>
+
+  <article class="item hot">
+    <span class="tag">WEATHER · ORIGIN</span>
+    <h2>A Ningbo weather event is driving about half of this week’s schedule slips</h2>
+    <div class="row"><div class="k">What</div><div class="v"><span class="stat">330 of 645</span> schedule deviations this week are ex-Ningbo, pushed <span class="stat">13.4 days</span> later on average. All <span class="stat">34</span> weather-disruption codes logged this year landed in the past 7 days — every one at Ningbo.
+      <div class="share">
+        <span class="cap">Ex-Ningbo</span>
+        <div class="meter" aria-hidden="true"><i style="width:51.2%"></i></div>
+        <span class="cap">51% of slips</span>
+      </div>
+    </div></div>
+    <div class="row"><div class="k">Why</div><div class="v">Storm disruption at origin plus knock-on container-yard closures. This is carrier scheduling, not supplier failure — supplier-caused codes are near zero on these orders.</div></div>
+    <div class="row action"><div class="k">Action</div><div class="v">Confirm revised ETAs with carriers on Ningbo strings and brief affected DCs to expect a ~2-week bulge. Do not escalate suppliers on these orders. <span class="owner">CARRIER TEAM</span></div></div>
+  </article>
+
+  <article class="item">
+    <span class="tag">INBOUND · DESTINATION</span>
+    <h2>Four DCs will absorb the Ningbo bulge in weeks 30–31</h2>
+    <div class="row"><div class="k">What</div><div class="v"><span class="stat">526</span> pushed orders this week route to four DCs, arriving 12–14 days later than planned.
+      <div class="bars" role="img" aria-label="Pushed orders by DC: DC21 155, DC30 146, DC18 120, DC15 105">
+        <div class="bar"><span class="lab">DC21</span><div class="meter"><i style="width:100%"></i></div><span class="val">155</span></div>
+        <div class="bar"><span class="lab">DC30</span><div class="meter"><i style="width:94%"></i></div><span class="val">146</span></div>
+        <div class="bar"><span class="lab">DC18</span><div class="meter"><i style="width:77%"></i></div><span class="val">120</span></div>
+        <div class="bar"><span class="lab">DC15</span><div class="meter"><i style="width:68%"></i></div><span class="val">105</span></div>
+      </div>
+    </div></div>
+    <div class="row"><div class="k">Why</div><div class="v">Downstream of the Ningbo item above. Top reason on every one of these DCs: container yard not open at origin.</div></div>
+    <div class="row action"><div class="k">Action</div><div class="v">Replan dock slots and labour for weeks 30–31, and flag the volume shift to inbound planning today. <span class="owner">DESTINATION OPS</span></div></div>
+  </article>
+
+  <!-- WATCH -->
+  <div class="seclabel sec-amber"><span class="dot"></span>Watch <span class="count">1 item · raise, don’t escalate</span></div>
+
+  <article class="item">
+    <span class="tag">SUPPLIER · REPEAT</span>
+    <h2>Two suppliers show repeat self-caused misses this month</h2>
+    <div class="row"><div class="k">What</div><div class="v">Of just <span class="stat">43</span> supplier-caused deviations in 30 days: <b>Zhuji Kangrui Knitting</b> — <span class="stat">8×</span> late truck arrangement; <b>CIBLE CO.</b> — <span class="stat">7×</span> documentation misses at gate-in.</div></div>
+    <div class="row"><div class="k">Why</div><div class="v">Same code each time — a process issue at the supplier, not a one-off. Context: of CIBLE’s 465 deviations in 30 days, 431 are carrier-caused; only the 7 documentation misses are theirs.</div></div>
+    <div class="row action"><div class="k">Action</div><div class="v">Raise both patterns at the next supplier review. No escalation on carrier-caused volume. <span class="owner">SUPPLIER TEAM</span></div></div>
+  </article>
+
+  <!-- CLEAR -->
+  <div class="seclabel sec-green"><span class="dot"></span>Clear <span class="count">no action</span></div>
+  <div class="clear">
+    <b>59 orders</b> this week moved to Pepco-approved revised schedules (S01). These are agreed plans, not delays — excluded from every figure above.
+  </div>
+
+  <!-- footer -->
+  <footer>
+    <div class="frow"><span class="lead">SOURCES</span><span>Delivery Performance Per Day <b>·</b> AHOD Reason Codes <b>·</b> Supplier Performance (owner join, 97.4% order match)</span></div>
+    <div class="frow"><span class="lead">PENDING</span><span>On-time definition — early / window — unconfirmed; headline uses “Actual vs Planned” as exported <b>·</b> CY-not-open external-constraint check open</span></div>
+  </footer>
+
+</div>
+<script>
+  (function(){
+    var KEY = "moov-brief-theme";
+    var root = document.documentElement;
+    var saved = null;
+    try { saved = localStorage.getItem(KEY); } catch (e) {}
+    if (saved === "light" || saved === "dark") root.setAttribute("data-theme", saved);
+    var btn = document.getElementById("themebtn");
+    btn.addEventListener("click", function(){
+      var isDark = root.getAttribute("data-theme") === "dark"
+        || (!root.getAttribute("data-theme")
+            && window.matchMedia("(prefers-color-scheme: dark)").matches);
+      var next = isDark ? "light" : "dark";
+      root.setAttribute("data-theme", next);
+      try { localStorage.setItem(KEY, next); } catch (e) {}
+    });
+  })();
+</script>
+</body>
+</html>

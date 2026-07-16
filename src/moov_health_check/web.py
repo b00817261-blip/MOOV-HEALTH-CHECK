@@ -627,6 +627,27 @@ def report_json(state: AppState, day: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Static pages — hand-authored HTML briefs served straight from the package
+# (the client-facing Pepco morning brief lives at /brief). No login: these are
+# shareable read-only pages with no desk data on them.
+# ---------------------------------------------------------------------------
+
+_STATIC_DIR = Path(__file__).parent / "static"
+
+
+def read_static(name: str) -> str | None:
+    """Return a static HTML file's text, or None if it isn't there. The name is
+    a bare filename — no path separators — so a request can't escape the dir."""
+    if "/" in name or "\\" in name or ".." in name:
+        return None
+    path = _STATIC_DIR / name
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
+# ---------------------------------------------------------------------------
 # Backup & restore — the whole desk in one portable JSON.
 #
 # On free hosts the disk is ephemeral: a restart wipes groups, tasks and
@@ -1112,6 +1133,13 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         # Public endpoints -------------------------------------------------
         if path == "/report.json":
             self._send(report_json(self.state, day), "application/json; charset=utf-8")
+            return
+        if path == "/brief":
+            html = read_static("pepco-brief.html")
+            if html is None:
+                self._send("Brief not found.", "text/plain; charset=utf-8", 404)
+            else:
+                self._send(html)
             return
         if path == "/backup.json":
             if user is None or not user.get("is_root"):
